@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AUTH_COOKIE_NAME, getSessionUserByToken } from "@/lib/auth-sql";
@@ -6,6 +5,7 @@ import { canAccess, listPermissions } from "@/lib/permissions-sql";
 import { getActiveSapCompany } from "@/lib/sap-stock";
 import { CompanySwitcher } from "@/components/company-switcher";
 import { SessionCard } from "@/components/session-card";
+import { SidebarNav } from "@/components/sidebar-nav";
 
 export default async function ProtectedLayout({
   children,
@@ -32,7 +32,6 @@ export default async function ProtectedLayout({
   const canSeeUsuarios = canAccess(permissions, session.Rol, "Usuarios");
   const canSeeLog = canAccess(permissions, session.Rol, "Log");
   const canSeePermisos = canAccess(permissions, session.Rol, "Permisos");
-  const showConfiguracion = canSeeUsuarios || canSeeLog || canSeePermisos;
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[280px_1fr]">
@@ -41,9 +40,7 @@ export default async function ProtectedLayout({
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[#ffb347]">
             NovaApp
           </p>
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight">
-            Menú
-          </h1>
+          <h1 className="mt-3 text-2xl font-semibold tracking-tight">Menú</h1>
           <div className="mt-4">
             <p className="mb-2 text-xs font-semibold uppercase tracking-[0.28em] text-[#f3d2b1]">
               Empresa activa
@@ -55,98 +52,13 @@ export default async function ProtectedLayout({
           </div>
         </div>
 
-        <nav aria-label="Menú principal" className="space-y-2">
-          {canSeeProduccion ? (
-            <div className="rounded-2xl border border-[#f3d2b1]/20 bg-white/4 p-3">
-              <p className="px-1 pb-2 text-xs font-semibold uppercase tracking-[0.32em] text-[#f3d2b1]">
-                Producción
-              </p>
-              <Link
-                href="/produccion/disponible-otn"
-                className="flex items-center justify-between rounded-xl bg-[#ff9200] px-3 py-2 text-sm font-medium text-white transition hover:bg-[#ffb347]"
-              >
-                <span>Disponible OTN</span>
-                <span aria-hidden className="text-white/90">
-                  →
-                </span>
-              </Link>
-            </div>
-          ) : null}
-
-          {canSeeBodega ? (
-            <div className="rounded-2xl border border-[#f3d2b1]/20 bg-white/4 p-3">
-              <p className="px-1 pb-2 text-xs font-semibold uppercase tracking-[0.32em] text-[#f3d2b1]">
-                Bodega
-              </p>
-              <Link
-                href="/bodega/stock-actual"
-                className="flex items-center justify-between rounded-xl bg-[#ff9200] px-3 py-2 text-sm font-medium text-white transition hover:bg-[#ffb347]"
-              >
-                <span>Stock Actual</span>
-                <span aria-hidden className="text-white/90">
-                  →
-                </span>
-              </Link>
-
-              <Link
-                href="/bodega/busqueda-en-oc"
-                className="mt-2 flex items-center justify-between rounded-xl bg-white/10 px-3 py-2 text-sm font-medium text-white transition hover:bg-[#ffb347]/15"
-              >
-                <span>Búsqueda en OC</span>
-                <span aria-hidden className="text-[#ffb347]">
-                  →
-                </span>
-              </Link>
-            </div>
-          ) : null}
-
-          {showConfiguracion ? (
-            <div className="rounded-2xl border border-[#f3d2b1]/20 bg-white/4 p-3">
-              <p className="px-1 pb-2 text-xs font-semibold uppercase tracking-[0.32em] text-[#f3d2b1]">
-                Configuración
-              </p>
-              {canSeeUsuarios ? (
-                <Link
-                  href="/usuarios"
-                  className="flex items-center justify-between rounded-xl bg-[#ff9200] px-3 py-2 text-sm font-medium text-white transition hover:bg-[#ffb347]"
-                >
-                  <span>Usuarios</span>
-                  <span aria-hidden className="text-white/90">
-                    →
-                  </span>
-                </Link>
-              ) : null}
-
-              {canSeeLog ? (
-                <Link
-                  href="/configuracion/log"
-                  className={`flex items-center justify-between rounded-xl bg-white/10 px-3 py-2 text-sm font-medium text-white transition hover:bg-[#ffb347]/15 ${
-                    canSeeUsuarios ? "mt-2" : ""
-                  }`}
-                >
-                  <span>Log</span>
-                  <span aria-hidden className="text-[#ffb347]">
-                    →
-                  </span>
-                </Link>
-              ) : null}
-
-              {canSeePermisos ? (
-                <Link
-                  href="/configuracion/permisos"
-                  className={`flex items-center justify-between rounded-xl bg-white/10 px-3 py-2 text-sm font-medium text-white transition hover:bg-[#ffb347]/15 ${
-                    canSeeUsuarios || canSeeLog ? "mt-2" : ""
-                  }`}
-                >
-                  <span>Permisos</span>
-                  <span aria-hidden className="text-[#ffb347]">
-                    →
-                  </span>
-                </Link>
-              ) : null}
-            </div>
-          ) : null}
-        </nav>
+        <SidebarNav
+          canSeeProduccion={canSeeProduccion}
+          canSeeBodega={canSeeBodega}
+          canSeeUsuarios={canSeeUsuarios}
+          canSeeLog={canSeeLog}
+          canSeePermisos={canSeePermisos}
+        />
 
         <SessionCard name={session.Nombre} role={session.Rol} />
       </aside>
