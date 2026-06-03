@@ -87,6 +87,16 @@ export default async function ProtectedLayout({
                   →
                 </span>
               </Link>
+
+              <Link
+                href="/bodega/busqueda-en-oc"
+                className="mt-2 flex items-center justify-between rounded-xl bg-white/10 px-3 py-2 text-sm font-medium text-white transition hover:bg-[#ffb347]/15"
+              >
+                <span>Búsqueda en OC</span>
+                <span aria-hidden className="text-[#ffb347]">
+                  →
+                </span>
+              </Link>
             </div>
           ) : null}
 

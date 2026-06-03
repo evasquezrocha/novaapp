@@ -711,7 +711,7 @@ export function DisponibleOtnClient() {
 
                 <article className="rounded-3xl border border-slate-950 bg-slate-950 p-5 shadow-sm md:col-span-2 xl:col-span-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#ffb347]">
-                    Costo Total
+                    COSTO TOTAL ACTUAL
                   </p>
                   <p className="mt-3 text-4xl font-semibold tracking-tight text-white">
                     {formatAmount(costoTotal)}

@@ -18,6 +18,25 @@ export type StockActualRow = {
   "Stock Minimo": number;
 };
 
+export type PurchaseOrderSearchRow = {
+  "N° OC": number;
+  OTN: string;
+  CC: string;
+  PROVEEDOR: string;
+  "N° O/C": number;
+  "FECHA O/C": string;
+  "N° ITEM": string;
+  "DESCRIPCIÓN": string;
+  CANT: number;
+  "CANT ABIERTA": number;
+  PRECIO: number;
+  TOTAL: number;
+  "SOLICITADO POR": string;
+  "CREADO POR": string;
+};
+
+export type PurchaseOrderSearchMode = "proveedor" | "descripcion" | "codigo";
+
 export type OpenPurchaseOrderRow = {
   NumeroOC: number;
   FechaEmision: string;
@@ -264,6 +283,94 @@ export async function getStockActualRows(): Promise<StockActualRow[]> {
 
     throw error;
   }
+}
+
+export async function getPurchaseOrderSearchRows(): Promise<PurchaseOrderSearchRow[]> {
+  const pool = await getSapPool();
+
+  const result = await pool.request().query<PurchaseOrderSearchRow>(`
+    SELECT
+      CAST(OPOR.DocNum AS int) AS [N° OC],
+      COALESCE(POR1.Project, '') AS [OTN],
+      COALESCE(POR1.OcrCode, '') AS [CC],
+      COALESCE(OPOR.CardName, '') AS [PROVEEDOR],
+      CAST(OPOR.DocNum AS int) AS [N° O/C],
+      CONVERT(varchar(10), OPOR.DocDate, 120) AS [FECHA O/C],
+      COALESCE(POR1.ItemCode, '') AS [N° ITEM],
+      COALESCE(POR1.Dscription, '') AS [DESCRIPCIÓN],
+      CAST(COALESCE(POR1.Quantity, 0) AS decimal(18, 2)) AS [CANT],
+      CAST(COALESCE(POR1.OpenCreQty, 0) AS decimal(18, 2)) AS [CANT ABIERTA],
+      CAST(COALESCE(POR1.Price, 0) AS decimal(18, 2)) AS [PRECIO],
+      CAST(COALESCE(POR1.LineTotal, 0) AS decimal(18, 2)) AS [TOTAL],
+      COALESCE(OSLP.SlpName, '') AS [SOLICITADO POR],
+      COALESCE(OUSR.U_NAME, '') AS [CREADO POR]
+    FROM OPOR OPOR
+    INNER JOIN POR1 POR1
+      ON POR1.DocEntry = OPOR.DocEntry
+    INNER JOIN OUSR OUSR
+      ON OPOR.UserSign = OUSR.USERID
+    INNER JOIN OSLP OSLP
+      ON OSLP.SlpCode = OPOR.SlpCode
+    WHERE OPOR.Canceled <> 'Y'
+    ORDER BY OPOR.DocDate DESC, OPOR.DocNum DESC, POR1.LineNum ASC
+  `);
+
+  return result.recordset;
+}
+
+function escapeSqlString(value: string) {
+  return value.replace(/'/g, "''");
+}
+
+export async function searchPurchaseOrderRows(input: {
+  mode: PurchaseOrderSearchMode;
+  query: string;
+}): Promise<PurchaseOrderSearchRow[]> {
+  const search = input.query.trim();
+
+  if (!search) {
+    return [];
+  }
+
+  const pool = await getSapPool();
+  const escaped = escapeSqlString(search);
+
+  const whereClause =
+    input.mode === "proveedor"
+      ? `OPOR.CardName LIKE '%${escaped}%'`
+      : input.mode === "descripcion"
+        ? `POR1.Dscription LIKE '%${escaped}%'`
+        : `POR1.ItemCode LIKE '%${escaped}%'`;
+
+  const result = await pool.request().query<PurchaseOrderSearchRow>(`
+    SELECT
+      CAST(OPOR.DocNum AS int) AS [N° OC],
+      COALESCE(POR1.Project, '') AS [OTN],
+      COALESCE(POR1.OcrCode, '') AS [CC],
+      COALESCE(OPOR.CardName, '') AS [PROVEEDOR],
+      CAST(OPOR.DocNum AS int) AS [N° O/C],
+      CONVERT(varchar(10), OPOR.DocDate, 120) AS [FECHA O/C],
+      COALESCE(POR1.ItemCode, '') AS [N° ITEM],
+      COALESCE(POR1.Dscription, '') AS [DESCRIPCIÓN],
+      CAST(COALESCE(POR1.Quantity, 0) AS decimal(18, 2)) AS [CANT],
+      CAST(COALESCE(POR1.OpenCreQty, 0) AS decimal(18, 2)) AS [CANT ABIERTA],
+      CAST(COALESCE(POR1.Price, 0) AS decimal(18, 2)) AS [PRECIO],
+      CAST(COALESCE(POR1.LineTotal, 0) AS decimal(18, 2)) AS [TOTAL],
+      COALESCE(OSLP.SlpName, '') AS [SOLICITADO POR],
+      COALESCE(OUSR.U_NAME, '') AS [CREADO POR]
+    FROM OPOR OPOR
+    INNER JOIN POR1 POR1
+      ON POR1.DocEntry = OPOR.DocEntry
+    INNER JOIN OUSR OUSR
+      ON OPOR.UserSign = OUSR.USERID
+    INNER JOIN OSLP OSLP
+      ON OSLP.SlpCode = OPOR.SlpCode
+    WHERE OPOR.Canceled <> 'Y'
+      AND ${whereClause}
+    ORDER BY OPOR.DocDate DESC, OPOR.DocNum DESC, POR1.LineNum ASC
+  `);
+
+  return result.recordset;
 }
 
 export async function getOpenPurchaseOrdersByItemCode(
