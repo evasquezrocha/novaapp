@@ -1,0 +1,19 @@
+IF OBJECT_ID('dbo.Usuarios', 'U') IS NULL
+BEGIN
+  CREATE TABLE dbo.Usuarios (
+    Id INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Usuarios PRIMARY KEY,
+    Nombre NVARCHAR(150) NOT NULL,
+    Usuario NVARCHAR(80) NOT NULL,
+    Correo NVARCHAR(255) NOT NULL,
+    Rol NVARCHAR(50) NOT NULL,
+    Activo BIT NOT NULL CONSTRAINT DF_Usuarios_Activo DEFAULT (1),
+    PasswordSalt VARBINARY(32) NOT NULL,
+    PasswordHash VARBINARY(64) NOT NULL,
+    CreadoEn DATETIME2(0) NOT NULL CONSTRAINT DF_Usuarios_CreadoEn DEFAULT SYSUTCDATETIME(),
+    ActualizadoEn DATETIME2(0) NOT NULL CONSTRAINT DF_Usuarios_ActualizadoEn DEFAULT SYSUTCDATETIME()
+  );
+
+  CREATE UNIQUE INDEX UX_Usuarios_Usuario ON dbo.Usuarios(Usuario);
+  CREATE UNIQUE INDEX UX_Usuarios_Correo ON dbo.Usuarios(Correo);
+END;
+GO
