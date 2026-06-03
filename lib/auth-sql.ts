@@ -118,6 +118,10 @@ function hashToken(token: string) {
   return createHash("sha256").update(token).digest();
 }
 
+function toSqlHex(buffer: Buffer) {
+  return `0x${buffer.toString("hex")}`;
+}
+
 function isMissingObjectError(error: unknown) {
   return (
     error instanceof Error &&
@@ -155,13 +159,11 @@ export async function createSession(user: SessionUser) {
 
     await pool
       .request()
-      .input("tokenHash", tokenHash)
-      .input("usuarioId", sql.Int, user.Id)
       .query(`
         INSERT INTO dbo.Sesiones
           (TokenHash, UsuarioId, ExpiraEn, UltimoAccesoEn)
         VALUES
-          (@tokenHash, @usuarioId, DATEADD(DAY, ${SESSION_DAYS}, SYSUTCDATETIME()), SYSUTCDATETIME())
+          (${toSqlHex(tokenHash)}, ${user.Id}, DATEADD(DAY, ${SESSION_DAYS}, SYSUTCDATETIME()), SYSUTCDATETIME())
       `);
 
     return {
@@ -190,7 +192,6 @@ export async function getSessionUserByToken(token: string) {
 
     return pool
       .request()
-      .input("tokenHash", tokenHash)
       .query<SessionUser>(`
         SELECT
           U.Id,
@@ -200,7 +201,7 @@ export async function getSessionUserByToken(token: string) {
         FROM dbo.Sesiones S
         INNER JOIN dbo.Usuarios U
           ON U.Id = S.UsuarioId
-        WHERE S.TokenHash = @tokenHash
+        WHERE S.TokenHash = ${toSqlHex(tokenHash)}
           AND S.RevocadoEn IS NULL
           AND S.ExpiraEn > SYSUTCDATETIME()
           AND U.Activo = 1
@@ -230,11 +231,10 @@ export async function revokeSession(token: string) {
 
     await pool
       .request()
-      .input("tokenHash", tokenHash)
       .query(`
         UPDATE dbo.Sesiones
         SET RevocadoEn = SYSUTCDATETIME()
-        WHERE TokenHash = @tokenHash
+        WHERE TokenHash = ${toSqlHex(tokenHash)}
       `);
   };
 
