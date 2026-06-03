@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { AUTH_COOKIE_NAME, getSessionUserByToken } from "@/lib/auth-sql";
 import {
+  getAsientosDirectosByOtn,
   getMaterialesDevueltosByOtn,
   getMaterialesUtilizadosByOtn,
+  getFondosRendidosByOtn,
   getProjectBudgetByOtn,
   getNcServiciosByOtn,
   getServiciosSinOcByOtn,
@@ -44,6 +46,8 @@ export async function GET(request: Request) {
       serviciosSinOc,
       serviciosUtilizados,
       ncServicios,
+      asientosDirectos,
+      fondosRendidos,
     ] = await Promise.all([
       getProjectBudgetByOtn(otn),
       getMaterialesUtilizadosByOtn(otn),
@@ -51,6 +55,8 @@ export async function GET(request: Request) {
       getServiciosSinOcByOtn(otn),
       getServiciosUtilizadosByOtn(otn),
       getNcServiciosByOtn(otn),
+      getAsientosDirectosByOtn(otn),
+      getFondosRendidosByOtn(otn),
     ]);
 
     if (!row) {
@@ -67,6 +73,8 @@ export async function GET(request: Request) {
       serviciosSinOc,
       serviciosUtilizados,
       ncServicios,
+      asientosDirectos,
+      fondosRendidos,
     });
   } catch (error) {
     const message =

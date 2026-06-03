@@ -52,12 +52,49 @@ type NcServicios = {
   rows: ServicesRow[];
 };
 
+type AsientosDirectosRow = {
+  Numero: number;
+  Fecha: string;
+  BaseRef: string;
+  Cuenta: string;
+  NombreCuenta: string;
+  Debe: number;
+  Haber: number;
+  Proyecto: string;
+  ProfitCode: string;
+  Memo: string;
+  Linea: number;
+  Saldo: number;
+  TipoTransaccion: number;
+};
+
+type AsientosDirectos = {
+  total: number;
+  rows: AsientosDirectosRow[];
+};
+
+type FondosRendidosRow = {
+  NumeroPago: number;
+  FechaPago: string;
+  EnFavorDe: string;
+  Cuenta: string;
+  Descripcion: string;
+  Monto: number;
+};
+
+type FondosRendidos = {
+  total: number;
+  rows: FondosRendidosRow[];
+};
+
 type TabKey =
   | "materiales-utilizados"
   | "materiales-devueltos"
   | "servicios-sin-oc"
   | "servicios-utilizados"
-  | "nc-servicios";
+  | "nc-servicios"
+  | "asientos-directos"
+  | "fondos-rendidos";
 
 type SortDirection = "asc" | "desc";
 
@@ -88,6 +125,8 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "servicios-sin-oc", label: "Servicios Utilizados sin OC" },
   { key: "servicios-utilizados", label: "Servicios Utilizados" },
   { key: "nc-servicios", label: "NC Servicios" },
+  { key: "asientos-directos", label: "Asientos Directos" },
+  { key: "fondos-rendidos", label: "Fondos Rendidos" },
 ];
 
 const MATERIAL_COLUMNS: ColumnDef<MaterialUsedRow>[] = [
@@ -140,6 +179,94 @@ const SERVICE_COLUMNS: ColumnDef<ServicesRow>[] = [
   },
 ];
 
+const ASIENTO_COLUMNS: ColumnDef<AsientosDirectosRow>[] = [
+  { key: "Numero", label: "Numero", sortType: "number", getValue: (row) => row.Numero },
+  { key: "Fecha", label: "Fecha", sortType: "date", getValue: (row) => row.Fecha, render: (value) => formatDate(String(value ?? "")) },
+  { key: "Cuenta", label: "Cuenta", sortType: "text", getValue: (row) => row.Cuenta },
+  { key: "NombreCuenta", label: "Nombre cuenta", sortType: "text", getValue: (row) => row.NombreCuenta },
+  { key: "ProfitCode", label: "Centro de Costos", sortType: "text", getValue: (row) => row.ProfitCode },
+  {
+    key: "Debe",
+    label: "Debe",
+    align: "right",
+    sortType: "number",
+    getValue: (row) => row.Debe,
+    render: (value) => formatAmount(Number(value ?? 0)),
+  },
+  {
+    key: "Haber",
+    label: "Haber",
+    align: "right",
+    sortType: "number",
+    getValue: (row) => row.Haber,
+    render: (value) => formatAmount(Number(value ?? 0)),
+  },
+  {
+    key: "Saldo",
+    label: "Saldo",
+    align: "right",
+    sortType: "number",
+    getValue: (row) => row.Saldo,
+    render: (value) => {
+      const amount = Number(value ?? 0);
+      const formatted = formatAmount(Math.abs(amount));
+
+      if (amount < 0) {
+        return `-${formatted}`;
+      }
+
+      if (amount > 0) {
+        return formatted;
+      }
+
+      return formatted;
+    },
+  },
+  { key: "Memo", label: "Observaciones", sortType: "text", getValue: (row) => row.Memo },
+];
+
+const FONDOS_COLUMNS: ColumnDef<FondosRendidosRow>[] = [
+  {
+    key: "NumeroPago",
+    label: "N° Pago",
+    sortType: "number",
+    getValue: (row) => row.NumeroPago,
+  },
+  {
+    key: "FechaPago",
+    label: "Fecha Pago",
+    sortType: "date",
+    getValue: (row) => row.FechaPago,
+    render: (value) => formatDate(String(value ?? "")),
+  },
+  {
+    key: "EnFavorDe",
+    label: "En Favor De",
+    sortType: "text",
+    getValue: (row) => row.EnFavorDe,
+  },
+  {
+    key: "Cuenta",
+    label: "Cuenta",
+    sortType: "text",
+    getValue: (row) => row.Cuenta,
+  },
+  {
+    key: "Descripcion",
+    label: "Descripción",
+    sortType: "text",
+    getValue: (row) => row.Descripcion,
+  },
+  {
+    key: "Monto",
+    label: "Monto",
+    align: "right",
+    sortType: "number",
+    getValue: (row) => row.Monto,
+    render: (value) => formatAmount(Number(value ?? 0)),
+  },
+];
+
 function getInitialTableState(): Record<TabKey, TableState> {
   return {
     "materiales-utilizados": { filters: {}, sort: null },
@@ -147,6 +274,8 @@ function getInitialTableState(): Record<TabKey, TableState> {
     "servicios-sin-oc": { filters: {}, sort: null },
     "servicios-utilizados": { filters: {}, sort: null },
     "nc-servicios": { filters: {}, sort: null },
+    "asientos-directos": { filters: {}, sort: null },
+    "fondos-rendidos": { filters: {}, sort: null },
   };
 }
 
@@ -199,6 +328,26 @@ function calculateDisponibleServicios(
     (serviciosSinOc ?? 0) -
     (serviciosUtilizados ?? 0) +
     (ncServicios ?? 0)
+  );
+}
+
+function calculateCostoTotal(
+  materialesUtilizados: number | null,
+  materialesDevueltos: number | null,
+  serviciosSinOc: number | null,
+  serviciosUtilizados: number | null,
+  ncServicios: number | null,
+  asientosDirectos: number | null,
+  fondosRendidos: number | null,
+) {
+  return (
+    (materialesUtilizados ?? 0) -
+    (materialesDevueltos ?? 0) +
+    (serviciosSinOc ?? 0) +
+    (serviciosUtilizados ?? 0) -
+    (ncServicios ?? 0) +
+    (asientosDirectos ?? 0) +
+    (fondosRendidos ?? 0)
   );
 }
 
@@ -423,6 +572,10 @@ export function DisponibleOtnClient() {
   const [serviciosUtilizados, setServiciosUtilizados] =
     useState<ServiciosUtilizados | null>(null);
   const [ncServicios, setNcServicios] = useState<NcServicios | null>(null);
+  const [asientosDirectos, setAsientosDirectos] =
+    useState<AsientosDirectos | null>(null);
+  const [fondosRendidos, setFondosRendidos] =
+    useState<FondosRendidos | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("materiales-utilizados");
   const [tableState, setTableState] = useState<Record<TabKey, TableState>>(
     getInitialTableState,
@@ -437,6 +590,8 @@ export function DisponibleOtnClient() {
     setServiciosSinOc(null);
     setServiciosUtilizados(null);
     setNcServicios(null);
+    setAsientosDirectos(null);
+    setFondosRendidos(null);
 
     if (!/^\d{4,6}$/.test(otn)) {
       setError("El OTN debe contener entre 4 y 6 digitos.");
@@ -457,6 +612,8 @@ export function DisponibleOtnClient() {
             serviciosSinOc: ServiciosSinOc;
             serviciosUtilizados: ServiciosUtilizados;
             ncServicios: NcServicios;
+            asientosDirectos: AsientosDirectos;
+            fondosRendidos: FondosRendidos;
           }
         | { error: string };
 
@@ -471,6 +628,8 @@ export function DisponibleOtnClient() {
       setServiciosSinOc(data.serviciosSinOc);
       setServiciosUtilizados(data.serviciosUtilizados);
       setNcServicios(data.ncServicios);
+      setAsientosDirectos(data.asientosDirectos);
+      setFondosRendidos(data.fondosRendidos);
       setActiveTab("materiales-utilizados");
     } catch {
       setError("No fue posible consultar el OTN.");
@@ -489,6 +648,15 @@ export function DisponibleOtnClient() {
     serviciosSinOc?.total ?? null,
     serviciosUtilizados?.total ?? null,
     ncServicios?.total ?? null,
+  );
+  const costoTotal = calculateCostoTotal(
+    materiales?.total ?? null,
+    materialesDevueltos?.total ?? null,
+    serviciosSinOc?.total ?? null,
+    serviciosUtilizados?.total ?? null,
+    ncServicios?.total ?? null,
+    asientosDirectos?.total ?? null,
+    fondosRendidos?.total ?? null,
   );
 
   return (
@@ -516,9 +684,9 @@ export function DisponibleOtnClient() {
                   type="submit"
                   disabled={loading}
                   className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {loading ? "Consultando..." : "Consultar"}
-                </button>
+                  >
+                    {loading ? "Consultando..." : "Consultar"}
+                  </button>
               </div>
             </div>
 
@@ -538,6 +706,15 @@ export function DisponibleOtnClient() {
                   </p>
                   <p className="mt-3 text-lg font-semibold text-slate-950">
                     {row.DESCRIPCION || "-"}
+                  </p>
+                </article>
+
+                <article className="rounded-3xl border border-slate-950 bg-slate-950 p-5 shadow-sm md:col-span-2 xl:col-span-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#ffb347]">
+                    Costo Total
+                  </p>
+                  <p className="mt-3 text-4xl font-semibold tracking-tight text-white">
+                    {formatAmount(costoTotal)}
                   </p>
                 </article>
 
@@ -739,6 +916,56 @@ export function DisponibleOtnClient() {
             ) : (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-500">
                 Consulta un OTN para mostrar el total y el detalle de NC servicios.
+              </div>
+            )
+          ) : activeTab === "asientos-directos" ? (
+            asientosDirectos ? (
+              <div className="space-y-5">
+                <div className="rounded-3xl border border-slate-200 bg-white p-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-700">
+                    Saldo total asientos directos
+                  </p>
+                  <p className="mt-3 text-4xl font-semibold tracking-tight text-slate-950">
+                    {formatAmount(asientosDirectos.total)}
+                  </p>
+                </div>
+                {renderSortableTable({
+                  columns: ASIENTO_COLUMNS,
+                  tabKey: "asientos-directos",
+                  rows: asientosDirectos.rows,
+                  emptyMessage: "No hay asientos directos para este OTN.",
+                  tableState: tableState["asientos-directos"],
+                  setTableState,
+                })}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-500">
+                Consulta un OTN para mostrar el total y el detalle de asientos directos.
+              </div>
+            )
+          ) : activeTab === "fondos-rendidos" ? (
+            fondosRendidos ? (
+              <div className="space-y-5">
+                <div className="rounded-3xl border border-slate-200 bg-white p-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-700">
+                    Total fondos rendidos
+                  </p>
+                  <p className="mt-3 text-4xl font-semibold tracking-tight text-slate-950">
+                    {formatAmount(fondosRendidos.total)}
+                  </p>
+                </div>
+                {renderSortableTable({
+                  columns: FONDOS_COLUMNS,
+                  tabKey: "fondos-rendidos",
+                  rows: fondosRendidos.rows,
+                  emptyMessage: "No hay fondos rendidos para este OTN.",
+                  tableState: tableState["fondos-rendidos"],
+                  setTableState,
+                })}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-500">
+                Consulta un OTN para mostrar el total y el detalle de fondos rendidos.
               </div>
             )
           ) : (

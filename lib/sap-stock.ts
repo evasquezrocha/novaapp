@@ -105,6 +105,41 @@ export type NcServiciosResult = {
   rows: NcServiciosRow[];
 };
 
+export type AsientosDirectosRow = {
+  Numero: number;
+  Fecha: string;
+  BaseRef: string;
+  Cuenta: string;
+  NombreCuenta: string;
+  Debe: number;
+  Haber: number;
+  Proyecto: string;
+  ProfitCode: string;
+  Memo: string;
+  Linea: number;
+  Saldo: number;
+  TipoTransaccion: number;
+};
+
+export type AsientosDirectosResult = {
+  total: number;
+  rows: AsientosDirectosRow[];
+};
+
+export type FondosRendidosRow = {
+  NumeroPago: number;
+  FechaPago: string;
+  EnFavorDe: string;
+  Cuenta: string;
+  Descripcion: string;
+  Monto: number;
+};
+
+export type FondosRendidosResult = {
+  total: number;
+  rows: FondosRendidosRow[];
+};
+
 type SqlEnv = {
   user: string;
   password: string;
@@ -478,5 +513,102 @@ export async function getNcServiciosByOtn(otn: string): Promise<NcServiciosResul
   return {
     total: totalResult.recordset[0]?.SERVNC ?? 0,
     rows: detailResult.recordset,
+  };
+}
+
+export async function getAsientosDirectosByOtn(
+  otn: string,
+): Promise<AsientosDirectosResult> {
+  const pool = await getSapPool();
+
+  const [totalResult, detailResult] = await Promise.all([
+    pool.request().query<{ SALDO: number }>(`
+      SELECT
+        CAST(ISNULL(SUM((JDT1.Debit - JDT1.Credit)), 0) AS decimal(18, 2)) AS [SALDO]
+      FROM JDT1 JDT1
+      INNER JOIN OACT OACT
+        ON JDT1.Account = OACT.AcctCode
+      INNER JOIN OJDT OJDT
+        ON JDT1.TransId = OJDT.TransId
+      WHERE OJDT.TransType <> -2
+        AND OJDT.TransType <> -3
+        AND JDT1.Project = '${otn}'
+        AND JDT1.Account >= '50000000'
+        AND OJDT.TransType = '30'
+    `),
+    pool.request().query<AsientosDirectosRow>(`
+      SELECT
+        OJDT.Number AS Numero,
+        CONVERT(varchar(10), OJDT.RefDate, 120) AS Fecha,
+        COALESCE(OJDT.BaseRef, '') AS BaseRef,
+        COALESCE(JDT1.Account, '') AS Cuenta,
+        COALESCE(OACT.AcctName, '') AS NombreCuenta,
+        CAST(COALESCE(JDT1.Debit, 0) AS decimal(18, 2)) AS Debe,
+        CAST(COALESCE(JDT1.Credit, 0) AS decimal(18, 2)) AS Haber,
+        COALESCE(JDT1.Project, '') AS Proyecto,
+        COALESCE(JDT1.ProfitCode, '') AS ProfitCode,
+        COALESCE(OJDT.Memo, '') AS Memo,
+        CAST(COALESCE(JDT1.Line_ID, 0) AS int) AS Linea,
+        CAST((COALESCE(JDT1.Debit, 0) - COALESCE(JDT1.Credit, 0)) AS decimal(18, 2)) AS Saldo,
+        CAST(COALESCE(OJDT.TransType, 0) AS int) AS TipoTransaccion
+      FROM JDT1 JDT1
+      INNER JOIN OACT OACT
+        ON JDT1.Account = OACT.AcctCode
+      INNER JOIN OJDT OJDT
+        ON JDT1.TransId = OJDT.TransId
+      WHERE OJDT.TransType <> -2
+        AND OJDT.TransType <> -3
+        AND JDT1.Project = '${otn}'
+        AND JDT1.Account >= '50000000'
+        AND OJDT.TransType = '30'
+      ORDER BY OJDT.RefDate DESC, OJDT.Number DESC, JDT1.Line_ID ASC
+    `),
+  ]);
+
+  return {
+    total: totalResult.recordset[0]?.SALDO ?? 0,
+    rows: detailResult.recordset,
+  };
+}
+
+export async function getFondosRendidosByOtn(
+  otn: string,
+): Promise<FondosRendidosResult> {
+  const pool = await getSapPool();
+
+  const result = await pool.request().query<FondosRendidosRow>(`
+    SELECT
+      OVPM.DocNum AS NumeroPago,
+      CONVERT(varchar(10), OVPM.DocDate, 120) AS FechaPago,
+      OVPM.CardName AS EnFavorDe,
+      VPM4.AcctName AS Cuenta,
+      VPM4.Descrip AS Descripcion,
+      CAST(COALESCE(VPM4.SumApplied, 0) AS decimal(18, 2)) AS Monto
+    FROM OVPM OVPM, VPM4 VPM4
+    WHERE VPM4.DocNum = OVPM.DocNum
+      AND (
+        (OVPM.TrsfrAcct = '11101001' AND VPM4.Project = '${otn}')
+        OR (VPM4.Project = '${otn}' AND OVPM.CashAcct = '11101001')
+      )
+    UNION ALL
+    SELECT
+      OVPM.DocNum AS NumeroPago,
+      CONVERT(varchar(10), OVPM.DocDate, 120) AS FechaPago,
+      OVPM.CardName AS EnFavorDe,
+      VPM4.AcctName AS Cuenta,
+      VPM4.Descrip AS Descripcion,
+      CAST(COALESCE(VPM4.SumApplied, 0) AS decimal(18, 2)) AS Monto
+    FROM OVPM OVPM, VPM1 VPM1, VPM4 VPM4
+    WHERE VPM4.DocNum = OVPM.DocNum
+      AND VPM1.DocNum = VPM4.DocNum
+      AND VPM4.LineId = VPM1.LineID
+      AND VPM1.CheckAct = '11101001'
+      AND VPM4.Project = '${otn}'
+    ORDER BY FechaPago DESC, NumeroPago DESC
+  `);
+
+  return {
+    total: result.recordset.reduce((sum, row) => sum + (row.Monto ?? 0), 0),
+    rows: result.recordset,
   };
 }
