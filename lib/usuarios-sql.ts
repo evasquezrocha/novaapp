@@ -342,6 +342,37 @@ export async function updateUsuario(input: {
   }
 }
 
+export async function updateUsuarioPassword(input: {
+  id: number;
+  password: string;
+}) {
+  const run = async () => {
+    const pool = await getPool();
+    const { salt, hash } = await hashPassword(input.password);
+
+    await pool.request().query(`
+      UPDATE dbo.Usuarios
+      SET
+        PasswordSalt = ${toSqlHex(salt)},
+        PasswordHash = ${toSqlHex(hash)},
+        ActualizadoEn = SYSUTCDATETIME()
+      WHERE Id = ${input.id}
+    `);
+  };
+
+  try {
+    await run();
+  } catch (error) {
+    if (!isMissingObjectError(error)) {
+      throw error;
+    }
+
+    global.__usuariosPool = undefined;
+    await ensureDatabaseSchema();
+    await run();
+  }
+}
+
 export async function deleteUsuario(id: number) {
   const run = async () => {
     const pool = await getPool();

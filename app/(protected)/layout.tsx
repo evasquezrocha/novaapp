@@ -5,6 +5,7 @@ import { AUTH_COOKIE_NAME, getSessionUserByToken } from "@/lib/auth-sql";
 import { canAccess, listPermissions } from "@/lib/permissions-sql";
 import { getActiveSapCompany } from "@/lib/sap-stock";
 import { CompanySwitcher } from "@/components/company-switcher";
+import { SessionCard } from "@/components/session-card";
 
 export default async function ProtectedLayout({
   children,
@@ -137,23 +138,7 @@ export default async function ProtectedLayout({
           ) : null}
         </nav>
 
-        <div className="mt-10 rounded-2xl border border-[#f3d2b1]/20 bg-white/6 p-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#f3d2b1]">
-            Sesión
-          </p>
-          <p className="mt-2 text-sm font-medium text-white">
-            {session.Nombre}
-          </p>
-          <p className="text-xs text-white/75">{session.Rol}</p>
-          <form action="/api/auth/logout" method="post" className="mt-4">
-            <button
-              type="submit"
-              className="w-full rounded-full border border-[#f3d2b1]/20 bg-[#ff9200] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#ffb347]"
-            >
-              Cerrar sesión
-            </button>
-          </form>
-        </div>
+        <SessionCard name={session.Nombre} role={session.Rol} />
       </aside>
 
       <main className="min-w-0 p-6 sm:p-8 lg:p-10">{children}</main>
