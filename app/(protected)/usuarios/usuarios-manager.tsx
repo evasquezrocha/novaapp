@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ROLES } from "@/lib/permissions-config";
 import type { UsuarioRow } from "@/lib/usuarios-sql";
 
 type FormState = {
@@ -39,6 +40,7 @@ export function UsuariosManager({ initialUsers }: { initialUsers: UsuarioRow[] }
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const roleOptions = useMemo(() => [...new Set([form.rol, ...ROLES])], [form.rol]);
 
   const selectedUser = useMemo(
     () => users.find((user) => user.Id === selectedId) ?? null,
@@ -226,13 +228,19 @@ export function UsuariosManager({ initialUsers }: { initialUsers: UsuarioRow[] }
 
           <label className="grid gap-2 text-sm font-medium text-slate-700">
             Rol
-            <input
+            <select
               value={form.rol}
               onChange={(event) =>
                 setForm((current) => ({ ...current, rol: event.target.value }))
               }
               className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
-            />
+            >
+              {roleOptions.map((role) => (
+                <option key={role} value={role}>
+                  {role}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label className="grid gap-2 text-sm font-medium text-slate-700">

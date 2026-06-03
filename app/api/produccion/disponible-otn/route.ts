@@ -29,9 +29,9 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const otn = searchParams.get("otn");
 
-  if (!otn || !/^\d{6}$/.test(otn)) {
+  if (!otn || !/^\d{4,6}$/.test(otn)) {
     return NextResponse.json(
-      { error: "El OTN debe tener 6 dígitos numéricos." },
+      { error: "El OTN debe tener entre 4 y 6 dígitos numéricos." },
       { status: 400 },
     );
   }

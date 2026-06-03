@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AUTH_COOKIE_NAME, getSessionUserByToken } from "@/lib/auth-sql";
 import { canAccess, listPermissions } from "@/lib/permissions-sql";
+import { getActiveSapCompany } from "@/lib/sap-stock";
+import { CompanySwitcher } from "@/components/company-switcher";
 
 export default async function ProtectedLayout({
   children,
@@ -23,6 +25,7 @@ export default async function ProtectedLayout({
   }
 
   const permissions = await listPermissions();
+  const company = await getActiveSapCompany();
   const canSeeProduccion = canAccess(permissions, session.Rol, "Producción");
   const canSeeBodega = canAccess(permissions, session.Rol, "Bodega");
   const canSeeUsuarios = canAccess(permissions, session.Rol, "Usuarios");
@@ -40,6 +43,15 @@ export default async function ProtectedLayout({
           <h1 className="mt-3 text-2xl font-semibold tracking-tight">
             Menú
           </h1>
+          <div className="mt-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.28em] text-[#f3d2b1]">
+              Empresa activa
+            </p>
+            <p className="text-sm font-semibold text-white/90">{company.label}</p>
+          </div>
+          <div className="mt-4">
+            <CompanySwitcher currentCompanyKey={company.key} />
+          </div>
         </div>
 
         <nav aria-label="Menú principal" className="space-y-2">

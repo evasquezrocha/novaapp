@@ -95,6 +95,14 @@ function isMissingObjectError(error: unknown) {
   );
 }
 
+function escapeSqlString(value: string) {
+  return value.replace(/'/g, "''");
+}
+
+function toSqlHex(buffer: Buffer) {
+  return `0x${buffer.toString("hex")}`;
+}
+
 export async function listUsuarios(): Promise<UsuarioRow[]> {
   const query = async () => {
     const pool = await getPool();
@@ -188,22 +196,19 @@ export async function findUsuarioForLoginByUsuario(
 export async function getUsuarioById(id: number): Promise<UsuarioRow | null> {
   const query = async () => {
     const pool = await getPool();
-    return pool
-      .request()
-      .input("id", sql.Int, id)
-      .query<UsuarioRow>(`
-        SELECT
-          Id,
-          Nombre,
-          Usuario,
-          Correo,
-          Rol,
-          Activo,
-          CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
-          CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
-        FROM dbo.Usuarios
-        WHERE Id = @id
-      `);
+    return pool.request().query<UsuarioRow>(`
+      SELECT
+        Id,
+        Nombre,
+        Usuario,
+        Correo,
+        Rol,
+        Activo,
+        CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
+        CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
+      FROM dbo.Usuarios
+      WHERE Id = ${id}
+    `);
   };
 
   try {
@@ -249,21 +254,18 @@ export async function createUsuario(input: {
   const run = async () => {
     const pool = await getPool();
     const { salt, hash } = await hashPassword(input.password);
+    const nombre = escapeSqlString(input.nombre);
+    const usuario = escapeSqlString(input.usuario);
+    const correo = escapeSqlString(input.correo);
+    const rol = escapeSqlString(input.rol);
 
     await pool
       .request()
-      .input("nombre", sql.NVarChar(150), input.nombre)
-      .input("usuario", sql.NVarChar(80), input.usuario)
-      .input("correo", sql.NVarChar(255), input.correo)
-      .input("rol", sql.NVarChar(50), input.rol)
-      .input("activo", sql.Bit, input.activo)
-      .input("passwordSalt", sql.VarBinary(32), salt)
-      .input("passwordHash", sql.VarBinary(64), hash)
       .query(`
         INSERT INTO dbo.Usuarios
           (Nombre, Usuario, Correo, Rol, Activo, PasswordSalt, PasswordHash)
         VALUES
-          (@nombre, @usuario, @correo, @rol, @activo, @passwordSalt, @passwordHash)
+          (N'${nombre}', N'${usuario}', N'${correo}', N'${rol}', ${input.activo ? 1 : 0}, ${toSqlHex(salt)}, ${toSqlHex(hash)})
       `);
   };
 
@@ -291,50 +293,40 @@ export async function updateUsuario(input: {
 }) {
   const run = async () => {
     const pool = await getPool();
-    const request = pool
-      .request()
-      .input("id", sql.Int, input.id)
-      .input("nombre", sql.NVarChar(150), input.nombre)
-      .input("usuario", sql.NVarChar(80), input.usuario)
-      .input("correo", sql.NVarChar(255), input.correo)
-      .input("rol", sql.NVarChar(50), input.rol)
-      .input("activo", sql.Bit, input.activo);
+    const nombre = escapeSqlString(input.nombre);
+    const usuario = escapeSqlString(input.usuario);
+    const correo = escapeSqlString(input.correo);
+    const rol = escapeSqlString(input.rol);
+    let query = `
+      UPDATE dbo.Usuarios
+      SET
+        Nombre = N'${nombre}',
+        Usuario = N'${usuario}',
+        Correo = N'${correo}',
+        Rol = N'${rol}',
+        Activo = ${input.activo ? 1 : 0},
+        ActualizadoEn = SYSUTCDATETIME()
+      WHERE Id = ${input.id}
+    `;
 
-    const passwordClause =
-      input.password?.trim().length
-        ? (() => {
-            return hashPassword(input.password).then(({ salt, hash }) =>
-              request
-                .input("passwordSalt", sql.VarBinary(32), salt)
-                .input("passwordHash", sql.VarBinary(64), hash)
-                .query(`
-                  UPDATE dbo.Usuarios
-                  SET
-                    Nombre = @nombre,
-                    Usuario = @usuario,
-                    Correo = @correo,
-                    Rol = @rol,
-                    Activo = @activo,
-                    PasswordSalt = @passwordSalt,
-                    PasswordHash = @passwordHash,
-                    ActualizadoEn = SYSUTCDATETIME()
-                  WHERE Id = @id
-                `),
-            );
-          })()
-        : request.query(`
-            UPDATE dbo.Usuarios
-            SET
-              Nombre = @nombre,
-              Usuario = @usuario,
-              Correo = @correo,
-              Rol = @rol,
-              Activo = @activo,
-              ActualizadoEn = SYSUTCDATETIME()
-            WHERE Id = @id
-          `);
+    if (input.password?.trim().length) {
+      const { salt, hash } = await hashPassword(input.password);
+      query = `
+        UPDATE dbo.Usuarios
+        SET
+          Nombre = N'${nombre}',
+          Usuario = N'${usuario}',
+          Correo = N'${correo}',
+          Rol = N'${rol}',
+          Activo = ${input.activo ? 1 : 0},
+          PasswordSalt = ${toSqlHex(salt)},
+          PasswordHash = ${toSqlHex(hash)},
+          ActualizadoEn = SYSUTCDATETIME()
+        WHERE Id = ${input.id}
+      `;
+    }
 
-    await passwordClause;
+    await pool.request().query(query);
   };
 
   try {
@@ -353,9 +345,9 @@ export async function updateUsuario(input: {
 export async function deleteUsuario(id: number) {
   const run = async () => {
     const pool = await getPool();
-    await pool.request().input("id", sql.Int, id).query(`
+    await pool.request().query(`
       DELETE FROM dbo.Usuarios
-      WHERE Id = @id
+      WHERE Id = ${id}
     `);
   };
 

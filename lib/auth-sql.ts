@@ -254,18 +254,17 @@ export async function revokeSession(token: string) {
 export async function recordAccessLog(user: SessionUser, ipAddress: string | null) {
   const run = async () => {
     const pool = await getAuthPool();
+    const usuario = user.Usuario.replace(/'/g, "''");
+    const nombre = user.Nombre.replace(/'/g, "''");
+    const direccionIp = (ipAddress ?? "").replace(/'/g, "''");
 
     await pool
       .request()
-      .input("usuarioId", sql.Int, user.Id)
-      .input("usuario", sql.NVarChar(80), user.Usuario)
-      .input("nombre", sql.NVarChar(150), user.Nombre)
-      .input("direccionIp", sql.NVarChar(45), ipAddress)
       .query(`
         INSERT INTO dbo.AccesosLog
           (UsuarioId, Usuario, Nombre, DireccionIp)
         VALUES
-          (@usuarioId, @usuario, @nombre, @direccionIp)
+          (${user.Id}, N'${usuario}', N'${nombre}', ${ipAddress ? `N'${direccionIp}'` : "NULL"})
       `);
   };
 

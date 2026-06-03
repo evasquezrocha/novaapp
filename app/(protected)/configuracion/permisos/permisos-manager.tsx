@@ -36,11 +36,20 @@ export function PermisosManager({ initialPermissions }: { initialPermissions: Pe
 
   function toggleModuleVisibility(role: string, module: string) {
     setPermissions((current) =>
-      current.map((row) =>
-        row.Rol === role && row.Modulo === module && row.Accion === "Ver"
-          ? { ...row, Permitido: !row.Permitido }
-          : row,
-      ),
+      current.map((row) => {
+        if (row.Rol !== role || row.Modulo !== module) {
+          return row;
+        }
+
+        if (row.Accion === "Ver") {
+          return { ...row, Permitido: !row.Permitido };
+        }
+
+        return {
+          ...row,
+          Permitido: false,
+        };
+      }),
     );
   }
 
@@ -192,40 +201,51 @@ export function PermisosManager({ initialPermissions }: { initialPermissions: Pe
               </div>
 
               <div className="mt-6 grid gap-4 lg:grid-cols-2">
-                {MODULES.map((module) => (
-                  <article key={`${role}-${module}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-sm font-semibold uppercase tracking-[0.25em] text-slate-700">
-                      {module}
-                    </p>
-                    <div className="mt-4 grid grid-cols-2 gap-3">
-                      {ACTIONS.map((action) => {
-                        const current =
-                          permissions.find(
-                            (row) =>
-                              row.Rol === role &&
-                              row.Modulo === module &&
-                              row.Accion === action,
-                          ) ?? null;
-                        const checked = current?.Permitido ?? false;
+                {MODULES.map((module) => {
+                  const moduleVisible = isModuleVisible(role, module);
 
-                        return (
-                          <label
-                            key={`${role}-${module}-${action}`}
-                            className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => togglePermission(role, module, action)}
-                              className="h-4 w-4 rounded border-slate-300 text-cyan-700 focus:ring-cyan-200"
-                            />
-                            <span>{action}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </article>
-                ))}
+                  return (
+                    <article
+                      key={`${role}-${module}`}
+                      className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                    >
+                      <p className="text-sm font-semibold uppercase tracking-[0.25em] text-slate-700">
+                        {module}
+                      </p>
+                      <div className="mt-4 grid grid-cols-2 gap-3">
+                        {ACTIONS.map((action) => {
+                          const current =
+                            permissions.find(
+                              (row) =>
+                                row.Rol === role &&
+                                row.Modulo === module &&
+                                row.Accion === action,
+                            ) ?? null;
+                          const checked = current?.Permitido ?? false;
+
+                          return (
+                            <label
+                              key={`${role}-${module}-${action}`}
+                              className={[
+                                "flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700",
+                                moduleVisible ? "" : "opacity-50",
+                              ].join(" ")}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => togglePermission(role, module, action)}
+                                disabled={!moduleVisible}
+                                className="h-4 w-4 rounded border-slate-300 text-cyan-700 focus:ring-cyan-200"
+                              />
+                              <span>{action}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             </section>
           );

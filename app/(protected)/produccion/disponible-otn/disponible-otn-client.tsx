@@ -1,6 +1,6 @@
 "use client";
 
-import type { FormEvent } from "react";
+import type { Dispatch, FormEvent, ReactNode, SetStateAction } from "react";
 import { useState } from "react";
 
 type ProjectRow = {
@@ -19,6 +19,14 @@ type MaterialUsedRow = {
   TotalLinea: number;
 };
 
+type ServicesRow = {
+  Documento: number;
+  Fecha: string;
+  Proveedor: string;
+  Descripcion: string;
+  TotalLinea: number;
+};
+
 type MaterialesUtilizados = {
   total: number;
   rows: MaterialUsedRow[];
@@ -31,35 +39,17 @@ type MaterialesDevueltos = {
 
 type ServiciosSinOc = {
   total: number;
-  rows: {
-    Documento: number;
-    Fecha: string;
-    Proveedor: string;
-    Descripcion: string;
-    TotalLinea: number;
-  }[];
+  rows: ServicesRow[];
 };
 
 type ServiciosUtilizados = {
   total: number;
-  rows: {
-    Documento: number;
-    Fecha: string;
-    Proveedor: string;
-    Descripcion: string;
-    TotalLinea: number;
-  }[];
+  rows: ServicesRow[];
 };
 
 type NcServicios = {
   total: number;
-  rows: {
-    Documento: number;
-    Fecha: string;
-    Proveedor: string;
-    Descripcion: string;
-    TotalLinea: number;
-  }[];
+  rows: ServicesRow[];
 };
 
 type TabKey =
@@ -69,6 +59,29 @@ type TabKey =
   | "servicios-utilizados"
   | "nc-servicios";
 
+type SortDirection = "asc" | "desc";
+
+type SortState = {
+  key: string;
+  direction: SortDirection;
+} | null;
+
+type TableState = {
+  filters: Record<string, string>;
+  sort: SortState;
+};
+
+type CellValue = string | number | null;
+
+type ColumnDef<T> = {
+  key: string;
+  label: string;
+  align?: "left" | "right";
+  sortType?: "text" | "number" | "date";
+  getValue: (row: T) => CellValue;
+  render?: (value: CellValue, row: T) => ReactNode;
+};
+
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "materiales-utilizados", label: "Materiales Utilizados" },
   { key: "materiales-devueltos", label: "Materiales Devueltos" },
@@ -76,6 +89,74 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "servicios-utilizados", label: "Servicios Utilizados" },
   { key: "nc-servicios", label: "NC Servicios" },
 ];
+
+const MATERIAL_COLUMNS: ColumnDef<MaterialUsedRow>[] = [
+  { key: "Documento", label: "Documento", sortType: "number", getValue: (row) => row.Documento },
+  { key: "Fecha", label: "Fecha", sortType: "date", getValue: (row) => row.Fecha, render: (value) => formatDate(String(value ?? "")) },
+  { key: "Codigo", label: "Codigo", sortType: "text", getValue: (row) => row.Codigo },
+  { key: "Descripcion", label: "Descripcion", sortType: "text", getValue: (row) => row.Descripcion },
+  {
+    key: "Cantidad",
+    label: "Cantidad",
+    align: "right",
+    sortType: "number",
+    getValue: (row) => row.Cantidad,
+    render: (value) =>
+      new Intl.NumberFormat("es-CL", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(Number(value ?? 0)),
+  },
+  {
+    key: "PrecioUnitario",
+    label: "Precio unitario",
+    align: "right",
+    sortType: "number",
+    getValue: (row) => row.PrecioUnitario,
+    render: (value) => formatAmount(Number(value ?? 0)),
+  },
+  {
+    key: "TotalLinea",
+    label: "Total",
+    align: "right",
+    sortType: "number",
+    getValue: (row) => row.TotalLinea,
+    render: (value) => formatAmount(Number(value ?? 0)),
+  },
+];
+
+const SERVICE_COLUMNS: ColumnDef<ServicesRow>[] = [
+  { key: "Documento", label: "Documento", sortType: "number", getValue: (row) => row.Documento },
+  { key: "Fecha", label: "Fecha", sortType: "date", getValue: (row) => row.Fecha, render: (value) => formatDate(String(value ?? "")) },
+  { key: "Proveedor", label: "Proveedor", sortType: "text", getValue: (row) => row.Proveedor },
+  { key: "Descripcion", label: "Descripcion", sortType: "text", getValue: (row) => row.Descripcion },
+  {
+    key: "TotalLinea",
+    label: "Total",
+    align: "right",
+    sortType: "number",
+    getValue: (row) => row.TotalLinea,
+    render: (value) => formatAmount(Number(value ?? 0)),
+  },
+];
+
+const TAB_COLUMNS: Record<TabKey, Array<ColumnDef<MaterialUsedRow> | ColumnDef<ServicesRow>>> = {
+  "materiales-utilizados": MATERIAL_COLUMNS,
+  "materiales-devueltos": MATERIAL_COLUMNS,
+  "servicios-sin-oc": SERVICE_COLUMNS,
+  "servicios-utilizados": SERVICE_COLUMNS,
+  "nc-servicios": SERVICE_COLUMNS,
+};
+
+function getInitialTableState(): Record<TabKey, TableState> {
+  return {
+    "materiales-utilizados": { filters: {}, sort: null },
+    "materiales-devueltos": { filters: {}, sort: null },
+    "servicios-sin-oc": { filters: {}, sort: null },
+    "servicios-utilizados": { filters: {}, sort: null },
+    "nc-servicios": { filters: {}, sort: null },
+  };
+}
 
 function formatAmount(value: number | null) {
   if (value === null) {
@@ -129,6 +210,215 @@ function calculateDisponibleServicios(
   );
 }
 
+function compareCellValues(
+  left: CellValue,
+  right: CellValue,
+  sortType: ColumnDef<unknown>["sortType"],
+) {
+  if (sortType === "date") {
+    const leftTime = new Date(String(left ?? "")).getTime();
+    const rightTime = new Date(String(right ?? "")).getTime();
+    return leftTime - rightTime;
+  }
+
+  if (sortType === "number") {
+    return Number(left ?? 0) - Number(right ?? 0);
+  }
+
+  return String(left ?? "").localeCompare(String(right ?? ""), "es", {
+    sensitivity: "base",
+  });
+}
+
+function renderSortableTable<T extends Record<string, CellValue>>({
+  tabKey,
+  rows,
+  emptyMessage,
+  tableState,
+  setTableState,
+}: {
+  tabKey: TabKey;
+  rows: T[];
+  emptyMessage: string;
+  tableState: TableState;
+  setTableState: Dispatch<SetStateAction<Record<TabKey, TableState>>>;
+}) {
+  const columns = TAB_COLUMNS[tabKey] as Array<ColumnDef<T>>;
+
+  const filteredRows = rows.filter((row) =>
+    columns.every((column) => {
+      const filter = tableState.filters[column.key]?.trim().toLowerCase();
+
+      if (!filter) {
+        return true;
+      }
+
+      return String(column.getValue(row) ?? "")
+        .toLowerCase()
+        .includes(filter);
+    }),
+  );
+
+  const sortedRows = [...filteredRows].sort((left, right) => {
+    if (!tableState.sort) {
+      return 0;
+    }
+
+    const column = columns.find((item) => item.key === tableState.sort?.key);
+    if (!column) {
+      return 0;
+    }
+
+    const comparison = compareCellValues(
+      column.getValue(left),
+      column.getValue(right),
+      column.sortType,
+    );
+
+    return tableState.sort.direction === "asc" ? comparison : -comparison;
+  });
+
+  function updateFilter(columnKey: string, value: string) {
+    setTableState((current) => ({
+      ...current,
+      [tabKey]: {
+        ...current[tabKey],
+        filters: {
+          ...current[tabKey].filters,
+          [columnKey]: value,
+        },
+      },
+    }));
+  }
+
+  function toggleSort(columnKey: string) {
+    setTableState((current) => {
+      const currentSort = current[tabKey].sort;
+      const nextSort: SortState =
+        currentSort?.key === columnKey
+          ? currentSort.direction === "asc"
+            ? { key: columnKey, direction: "desc" }
+            : null
+          : { key: columnKey, direction: "asc" };
+
+      return {
+        ...current,
+        [tabKey]: {
+          ...current[tabKey],
+          sort: nextSort,
+        },
+      };
+    });
+  }
+
+  function clearFilters() {
+    setTableState((current) => ({
+      ...current,
+      [tabKey]: {
+        filters: {},
+        sort: null,
+      },
+    }));
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={clearFilters}
+          className="rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+        >
+          Limpiar filtros y orden
+        </button>
+        <p className="text-xs text-slate-500">
+          Filtra cada columna y usa el encabezado para ordenar asc/desc.
+        </p>
+      </div>
+
+      <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white">
+        <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+          <thead className="bg-slate-50 text-slate-700">
+            <tr>
+              {columns.map((column) => {
+                const isSorted = tableState.sort?.key === column.key;
+                const sortLabel = isSorted
+                  ? tableState.sort?.direction === "asc"
+                    ? " ↑"
+                    : " ↓"
+                  : "";
+
+                return (
+                  <th
+                    key={column.key}
+                    className={[
+                      "px-4 py-3 font-semibold",
+                      column.align === "right" ? "text-right" : "text-left",
+                    ].join(" ")}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleSort(column.key)}
+                      className="inline-flex items-center gap-1 text-left font-semibold transition hover:text-slate-950"
+                    >
+                      <span>{column.label}</span>
+                      <span className="text-xs text-slate-500">{sortLabel}</span>
+                    </button>
+                  </th>
+                );
+              })}
+            </tr>
+            <tr className="border-t border-slate-200 bg-white">
+              {columns.map((column) => (
+                <th key={`${column.key}-filter`} className="px-3 py-3 align-top">
+                  <input
+                    value={tableState.filters[column.key] ?? ""}
+                    onChange={(event) => updateFilter(column.key, event.target.value)}
+                    placeholder={`Filtrar ${column.label.toLowerCase()}`}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 outline-none transition focus:border-cyan-700 focus:ring-4 focus:ring-cyan-100"
+                  />
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {sortedRows.length === 0 ? (
+              <tr>
+                <td className="px-4 py-6 text-slate-500" colSpan={columns.length}>
+                  {emptyMessage}
+                </td>
+              </tr>
+            ) : (
+              sortedRows.map((row, index) => (
+                <tr key={`${String(row.Documento ?? index)}-${index}`}>
+                  {columns.map((column) => {
+                    const value = column.getValue(row);
+                    const rendered = column.render ? column.render(value, row) : value;
+
+                    return (
+                      <td
+                        key={`${column.key}-${index}`}
+                        className={[
+                          "px-4 py-3",
+                          column.align === "right"
+                            ? "text-right tabular-nums text-slate-900"
+                            : "text-slate-700",
+                        ].join(" ")}
+                      >
+                        {rendered ?? "-"}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export function DisponibleOtnClient() {
   const [otn, setOtn] = useState("");
   const [loading, setLoading] = useState(false);
@@ -142,6 +432,9 @@ export function DisponibleOtnClient() {
     useState<ServiciosUtilizados | null>(null);
   const [ncServicios, setNcServicios] = useState<NcServicios | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("materiales-utilizados");
+  const [tableState, setTableState] = useState<Record<TabKey, TableState>>(
+    getInitialTableState,
+  );
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -153,8 +446,8 @@ export function DisponibleOtnClient() {
     setServiciosUtilizados(null);
     setNcServicios(null);
 
-    if (!/^\d{6}$/.test(otn)) {
-      setError("El OTN debe contener exactamente 6 dígitos.");
+    if (!/^\d{4,6}$/.test(otn)) {
+      setError("El OTN debe contener entre 4 y 6 digitos.");
       return;
     }
 
@@ -194,8 +487,6 @@ export function DisponibleOtnClient() {
     }
   }
 
-  const activeLabel =
-    TABS.find((tab) => tab.key === activeTab)?.label ?? "Sección";
   const disponibleMateriales = calculateDisponibleMateriales(
     row?.MATPPTO ?? null,
     materiales?.total ?? null,
@@ -225,8 +516,8 @@ export function DisponibleOtnClient() {
                   }
                   inputMode="numeric"
                   maxLength={6}
-                  pattern="\d{6}"
-                  placeholder="000000"
+                  pattern="\d{4,6}"
+                  placeholder="0000 - 000000"
                   className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-cyan-700 focus:ring-4 focus:ring-cyan-100 sm:max-w-xs"
                 />
                 <button
@@ -251,7 +542,7 @@ export function DisponibleOtnClient() {
               <div className="grid w-full gap-4 md:grid-cols-5 md:items-center">
                 <article className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
                   <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-700">
-                    Descripción del proyecto
+                    Descripcion del proyecto
                   </p>
                   <p className="mt-3 text-lg font-semibold text-slate-950">
                     {row.DESCRIPCION || "-"}
@@ -296,7 +587,7 @@ export function DisponibleOtnClient() {
               </div>
             ) : (
               <div className="flex w-full items-center rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
-                Los resultados aparecerán aquí junto al botón de consulta.
+                Los resultados apareceran aqui junto al boton de consulta.
               </div>
             )}
           </div>
@@ -344,65 +635,13 @@ export function DisponibleOtnClient() {
                     {formatAmount(materiales.total)}
                   </p>
                 </div>
-
-                <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white">
-                  <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-                    <thead className="bg-slate-50 text-slate-700">
-                      <tr>
-                        <th className="px-4 py-3 font-semibold">Documento</th>
-                        <th className="px-4 py-3 font-semibold">Fecha</th>
-                        <th className="px-4 py-3 font-semibold">Código</th>
-                        <th className="px-4 py-3 font-semibold">Descripción</th>
-                        <th className="px-4 py-3 font-semibold text-right">Cantidad</th>
-                        <th className="px-4 py-3 font-semibold text-right">
-                          Precio unitario
-                        </th>
-                        <th className="px-4 py-3 font-semibold text-right">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {materiales.rows.length === 0 ? (
-                        <tr>
-                          <td
-                            className="px-4 py-6 text-slate-500"
-                            colSpan={7}
-                          >
-                            No hay materiales utilizados para este OTN.
-                          </td>
-                        </tr>
-                      ) : (
-                        materiales.rows.map((detail, index) => (
-                          <tr key={`${detail.Documento}-${detail.Codigo}-${index}`}>
-                            <td className="px-4 py-3 font-medium text-slate-900">
-                              {detail.Documento}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700">
-                              {formatDate(detail.Fecha)}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700">
-                              {detail.Codigo}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700">
-                              {detail.Descripcion}
-                            </td>
-                            <td className="px-4 py-3 text-right tabular-nums text-slate-900">
-                              {new Intl.NumberFormat("es-CL", {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              }).format(detail.Cantidad)}
-                            </td>
-                            <td className="px-4 py-3 text-right tabular-nums text-slate-900">
-                              {formatAmount(detail.PrecioUnitario)}
-                            </td>
-                            <td className="px-4 py-3 text-right tabular-nums font-medium text-slate-950">
-                              {formatAmount(detail.TotalLinea)}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                {renderSortableTable({
+                  tabKey: "materiales-utilizados",
+                  rows: materiales.rows,
+                  emptyMessage: "No hay materiales utilizados para este OTN.",
+                  tableState: tableState["materiales-utilizados"],
+                  setTableState,
+                })}
               </div>
             ) : (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-500">
@@ -420,62 +659,13 @@ export function DisponibleOtnClient() {
                     {formatAmount(materialesDevueltos.total)}
                   </p>
                 </div>
-
-                <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white">
-                  <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-                    <thead className="bg-slate-50 text-slate-700">
-                      <tr>
-                        <th className="px-4 py-3 font-semibold">Documento</th>
-                        <th className="px-4 py-3 font-semibold">Fecha</th>
-                        <th className="px-4 py-3 font-semibold">Código</th>
-                        <th className="px-4 py-3 font-semibold">Descripción</th>
-                        <th className="px-4 py-3 font-semibold text-right">Cantidad</th>
-                        <th className="px-4 py-3 font-semibold text-right">
-                          Precio unitario
-                        </th>
-                        <th className="px-4 py-3 font-semibold text-right">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {materialesDevueltos.rows.length === 0 ? (
-                        <tr>
-                          <td className="px-4 py-6 text-slate-500" colSpan={7}>
-                            No hay materiales devueltos para este OTN.
-                          </td>
-                        </tr>
-                      ) : (
-                        materialesDevueltos.rows.map((detail, index) => (
-                          <tr key={`${detail.Documento}-${detail.Codigo}-${index}`}>
-                            <td className="px-4 py-3 font-medium text-slate-900">
-                              {detail.Documento}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700">
-                              {formatDate(detail.Fecha)}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700">
-                              {detail.Codigo}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700">
-                              {detail.Descripcion}
-                            </td>
-                            <td className="px-4 py-3 text-right tabular-nums text-slate-900">
-                              {new Intl.NumberFormat("es-CL", {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              }).format(detail.Cantidad)}
-                            </td>
-                            <td className="px-4 py-3 text-right tabular-nums text-slate-900">
-                              {formatAmount(detail.PrecioUnitario)}
-                            </td>
-                            <td className="px-4 py-3 text-right tabular-nums font-medium text-slate-950">
-                              {formatAmount(detail.TotalLinea)}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                {renderSortableTable({
+                  tabKey: "materiales-devueltos",
+                  rows: materialesDevueltos.rows,
+                  emptyMessage: "No hay materiales devueltos para este OTN.",
+                  tableState: tableState["materiales-devueltos"],
+                  setTableState,
+                })}
               </div>
             ) : (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-500">
@@ -493,49 +683,13 @@ export function DisponibleOtnClient() {
                     {formatAmount(serviciosSinOc.total)}
                   </p>
                 </div>
-
-                <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white">
-                  <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-                    <thead className="bg-slate-50 text-slate-700">
-                      <tr>
-                        <th className="px-4 py-3 font-semibold">Documento</th>
-                        <th className="px-4 py-3 font-semibold">Fecha</th>
-                        <th className="px-4 py-3 font-semibold">Proveedor</th>
-                        <th className="px-4 py-3 font-semibold">Descripción</th>
-                        <th className="px-4 py-3 font-semibold text-right">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {serviciosSinOc.rows.length === 0 ? (
-                        <tr>
-                          <td className="px-4 py-6 text-slate-500" colSpan={5}>
-                            No hay servicios utilizados sin OC para este OTN.
-                          </td>
-                        </tr>
-                      ) : (
-                        serviciosSinOc.rows.map((detail, index) => (
-                          <tr key={`${detail.Documento}-${detail.Descripcion}-${index}`}>
-                            <td className="px-4 py-3 font-medium text-slate-900">
-                              {detail.Documento}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700">
-                              {formatDate(detail.Fecha)}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700">
-                              {detail.Proveedor}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700">
-                              {detail.Descripcion}
-                            </td>
-                            <td className="px-4 py-3 text-right tabular-nums font-medium text-slate-950">
-                              {formatAmount(detail.TotalLinea)}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                {renderSortableTable({
+                  tabKey: "servicios-sin-oc",
+                  rows: serviciosSinOc.rows,
+                  emptyMessage: "No hay servicios utilizados sin OC para este OTN.",
+                  tableState: tableState["servicios-sin-oc"],
+                  setTableState,
+                })}
               </div>
             ) : (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-500">
@@ -553,49 +707,13 @@ export function DisponibleOtnClient() {
                     {formatAmount(serviciosUtilizados.total)}
                   </p>
                 </div>
-
-                <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white">
-                  <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-                    <thead className="bg-slate-50 text-slate-700">
-                      <tr>
-                        <th className="px-4 py-3 font-semibold">Documento</th>
-                        <th className="px-4 py-3 font-semibold">Fecha</th>
-                        <th className="px-4 py-3 font-semibold">Proveedor</th>
-                        <th className="px-4 py-3 font-semibold">Descripción</th>
-                        <th className="px-4 py-3 font-semibold text-right">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {serviciosUtilizados.rows.length === 0 ? (
-                        <tr>
-                          <td className="px-4 py-6 text-slate-500" colSpan={5}>
-                            No hay servicios utilizados para este OTN.
-                          </td>
-                        </tr>
-                      ) : (
-                        serviciosUtilizados.rows.map((detail, index) => (
-                          <tr key={`${detail.Documento}-${detail.Descripcion}-${index}`}>
-                            <td className="px-4 py-3 font-medium text-slate-900">
-                              {detail.Documento}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700">
-                              {formatDate(detail.Fecha)}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700">
-                              {detail.Proveedor}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700">
-                              {detail.Descripcion}
-                            </td>
-                            <td className="px-4 py-3 text-right tabular-nums font-medium text-slate-950">
-                              {formatAmount(detail.TotalLinea)}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                {renderSortableTable({
+                  tabKey: "servicios-utilizados",
+                  rows: serviciosUtilizados.rows,
+                  emptyMessage: "No hay servicios utilizados para este OTN.",
+                  tableState: tableState["servicios-utilizados"],
+                  setTableState,
+                })}
               </div>
             ) : (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-500">
@@ -613,49 +731,13 @@ export function DisponibleOtnClient() {
                     {formatAmount(ncServicios.total)}
                   </p>
                 </div>
-
-                <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white">
-                  <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-                    <thead className="bg-slate-50 text-slate-700">
-                      <tr>
-                        <th className="px-4 py-3 font-semibold">Documento</th>
-                        <th className="px-4 py-3 font-semibold">Fecha</th>
-                        <th className="px-4 py-3 font-semibold">Proveedor</th>
-                        <th className="px-4 py-3 font-semibold">Descripción</th>
-                        <th className="px-4 py-3 font-semibold text-right">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {ncServicios.rows.length === 0 ? (
-                        <tr>
-                          <td className="px-4 py-6 text-slate-500" colSpan={5}>
-                            No hay NC servicios para este OTN.
-                          </td>
-                        </tr>
-                      ) : (
-                        ncServicios.rows.map((detail, index) => (
-                          <tr key={`${detail.Documento}-${detail.Descripcion}-${index}`}>
-                            <td className="px-4 py-3 font-medium text-slate-900">
-                              {detail.Documento}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700">
-                              {formatDate(detail.Fecha)}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700">
-                              {detail.Proveedor}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700">
-                              {detail.Descripcion}
-                            </td>
-                            <td className="px-4 py-3 text-right tabular-nums font-medium text-slate-950">
-                              {formatAmount(detail.TotalLinea)}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                {renderSortableTable({
+                  tabKey: "nc-servicios",
+                  rows: ncServicios.rows,
+                  emptyMessage: "No hay NC servicios para este OTN.",
+                  tableState: tableState["nc-servicios"],
+                  setTableState,
+                })}
               </div>
             ) : (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-500">
@@ -664,7 +746,7 @@ export function DisponibleOtnClient() {
             )
           ) : (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-500">
-              La sección <span className="font-medium text-slate-950">{activeLabel}</span> queda lista para cargar su consulta específica.
+              La seccion queda lista para cargar su consulta especifica.
             </div>
           )}
         </div>

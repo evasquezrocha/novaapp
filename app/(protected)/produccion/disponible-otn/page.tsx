@@ -29,7 +29,7 @@ export default async function DisponibleOtnPage() {
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
           Consulta en SAP la descripción del proyecto y sus presupuestos a partir
-          de un OTN de 6 dígitos.
+          de un OTN de entre 4 y 6 dígitos.
         </p>
       </div>
 
