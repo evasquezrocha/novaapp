@@ -1,7 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { StockActualRow, OpenPurchaseOrderRow } from "@/lib/sap-stock";
+import type {
+  EquivalentStockRow,
+  StockActualRow,
+  OpenPurchaseOrderRow,
+} from "@/lib/sap-stock";
 
 type ColumnKey = keyof StockActualRow;
 type SortDirection = "asc" | "desc";
@@ -103,6 +107,11 @@ function DetailPanel({
   rows,
   loading,
   error,
+  equivalentRows,
+  equivalentLoading,
+  equivalentError,
+  equivalentFor,
+  onSearchEquivalents,
   onClose,
 }: {
   itemCode: string;
@@ -110,6 +119,11 @@ function DetailPanel({
   rows: OpenPurchaseOrderRow[];
   loading: boolean;
   error: string | null;
+  equivalentRows: EquivalentStockRow[] | null;
+  equivalentLoading: boolean;
+  equivalentError: string | null;
+  equivalentFor: string | null;
+  onSearchEquivalents: () => void;
   onClose: () => void;
 }) {
   return (
@@ -128,13 +142,23 @@ function DetailPanel({
                 {itemCode} - {description}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-full border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
-            >
-              Cerrar
-            </button>
+            <div className="flex flex-col items-end gap-2">
+              <button
+                type="button"
+                onClick={onSearchEquivalents}
+                className="rounded-full border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={equivalentLoading}
+              >
+                {equivalentLoading ? "Buscando..." : "Buscar equivalencias"}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-full border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
         </div>
 
@@ -237,6 +261,98 @@ function DetailPanel({
             </div>
           )}
         </div>
+
+        <div className="border-t border-slate-200 px-6 py-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-700">
+                Codigos equivalentes
+              </p>
+              <p className="mt-2 text-sm text-slate-600">
+                {equivalentFor
+                  ? `Resultados para ${equivalentFor}`
+                  : "Selecciona un codigo y busca sus equivalencias."}
+              </p>
+            </div>
+          </div>
+
+          {equivalentError ? (
+            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {equivalentError}
+            </div>
+          ) : equivalentLoading ? (
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Buscando codigos equivalentes...
+            </div>
+          ) : equivalentFor && equivalentRows ? (
+            equivalentRows.length === 0 ? (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                No se encontraron codigos equivalentes para este articulo.
+              </div>
+            ) : (
+              <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+                <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-700">
+                    <tr>
+                      <th className="px-3 py-2 font-semibold">Tipo</th>
+                      <th className="px-3 py-2 font-semibold">Codigo</th>
+                      <th className="px-3 py-2 font-semibold">Descripcion</th>
+                      <th className="px-3 py-2 font-semibold">Unidad</th>
+                      <th className="px-3 py-2 font-semibold">Bodega</th>
+                      <th className="px-3 py-2 text-right font-semibold">
+                        Stock Actual
+                      </th>
+                      <th className="px-3 py-2 text-right font-semibold">
+                        Pedido
+                      </th>
+                      <th className="px-3 py-2 text-right font-semibold">
+                        Stock Minimo
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {equivalentRows.map((row) => (
+                      <tr key={`${row.Codigo}-${row.Bodega}`}>
+                        <td className="px-3 py-2">
+                          <span
+                            className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${
+                              row.EsPrincipal
+                                ? "bg-amber-100 text-amber-900"
+                                : "bg-slate-100 text-slate-700"
+                            }`}
+                          >
+                            {row.EsPrincipal ? "Base" : "Equivalente"}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 font-medium text-slate-900">
+                          {row.Codigo}
+                        </td>
+                        <td className="px-3 py-2 text-slate-700">
+                          {row.Descripcion}
+                        </td>
+                        <td className="px-3 py-2 text-slate-700">{row.Unidad}</td>
+                        <td className="px-3 py-2 text-slate-700">{row.Bodega}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-slate-900">
+                          {formatValue(row["Stock Actual"])}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-slate-900">
+                          {formatValue(row.Pedido)}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-slate-900">
+                          {formatValue(row["Stock Minimo"])}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          ) : (
+            <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Busca equivalencias para ver los codigos relacionados y su stock.
+            </div>
+          )}
+        </div>
       </div>
     </aside>
   );
@@ -250,6 +366,10 @@ export function StockActualTable({ rows }: { rows: StockActualRow[] }) {
   const [detailRows, setDetailRows] = useState<OpenPurchaseOrderRow[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [equivalentRows, setEquivalentRows] = useState<EquivalentStockRow[] | null>(null);
+  const [equivalentLoading, setEquivalentLoading] = useState(false);
+  const [equivalentError, setEquivalentError] = useState<string | null>(null);
+  const [equivalentFor, setEquivalentFor] = useState<string | null>(null);
   const [rowFilters, setRowFilters] = useState({
     stockActual: false,
     pedido: false,
@@ -306,6 +426,9 @@ export function StockActualTable({ rows }: { rows: StockActualRow[] }) {
     setDetailRows([]);
     setDetailError(null);
     setDetailLoading(true);
+    setEquivalentRows(null);
+    setEquivalentError(null);
+    setEquivalentFor(null);
 
     try {
       const response = await fetch(
@@ -338,6 +461,50 @@ export function StockActualTable({ rows }: { rows: StockActualRow[] }) {
       );
     } finally {
       setDetailLoading(false);
+    }
+  }
+
+  async function searchEquivalents() {
+    if (!selectedRow) {
+      return;
+    }
+
+    setEquivalentError(null);
+    setEquivalentRows(null);
+    setEquivalentFor(selectedRow.Codigo);
+    setEquivalentLoading(true);
+
+    try {
+      const response = await fetch(
+        `/api/bodega/stock-actual/equivalentes?codigo=${encodeURIComponent(selectedRow.Codigo)}`,
+        { cache: "no-store" },
+      );
+
+      const payload = (await response.json()) as {
+        rows?: EquivalentStockRow[];
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(
+          payload.error ??
+            `No fue posible cargar las equivalencias (${response.status}).`,
+        );
+      }
+
+      if (payload.error) {
+        throw new Error(payload.error);
+      }
+
+      setEquivalentRows(payload.rows ?? []);
+    } catch (error) {
+      setEquivalentError(
+        error instanceof Error
+          ? error.message
+          : "No fue posible cargar las equivalencias.",
+      );
+    } finally {
+      setEquivalentLoading(false);
     }
   }
 
@@ -571,6 +738,11 @@ export function StockActualTable({ rows }: { rows: StockActualRow[] }) {
             rows={detailRows}
             loading={detailLoading}
             error={detailError}
+            equivalentRows={equivalentRows}
+            equivalentLoading={equivalentLoading}
+            equivalentError={equivalentError}
+            equivalentFor={equivalentFor}
+            onSearchEquivalents={() => void searchEquivalents()}
             onClose={() => setSelectedRow(null)}
           />
         </>

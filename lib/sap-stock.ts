@@ -18,6 +18,10 @@ export type StockActualRow = {
   "Stock Minimo": number;
 };
 
+export type EquivalentStockRow = StockActualRow & {
+  EsPrincipal: boolean;
+};
+
 export type PurchaseOrderSearchRow = {
   "N° OC": number;
   OTN: string;
@@ -278,6 +282,70 @@ export async function getStockActualRows(): Promise<StockActualRow[]> {
     if (isMissingObjectError(error)) {
       throw new Error(
         `La tabla OITM no existe en la base SAP configurada para ${(await getActiveSapCompany()).label}. Revisa el esquema o la base asignada.`,
+      );
+    }
+
+    throw error;
+  }
+}
+
+export async function getEquivalentStockRowsByCode(
+  codigo: string,
+): Promise<EquivalentStockRow[]> {
+  const searchCode = codigo.trim();
+
+  if (!searchCode) {
+    return [];
+  }
+
+  const pool = await getSapPool();
+
+  try {
+    const result = await pool
+      .request()
+      .input("codigo", searchCode)
+      .query<EquivalentStockRow>(`
+        SELECT
+          T0.ItemCode AS Codigo,
+          T0.ItemName AS Descripcion,
+          COALESCE(T0.InvntryUom, '') AS Unidad,
+          T2.WhsName AS Bodega,
+          CAST(COALESCE(T1.OnHand, 0) AS decimal(18, 2)) AS [Stock Actual],
+          CAST(COALESCE(T1.OnOrder, 0) AS decimal(18, 2)) AS Pedido,
+          CAST(COALESCE(T1.MinStock, 0) AS decimal(18, 2)) AS [Stock Minimo],
+          CASE WHEN T0.ItemCode = @codigo THEN 1 ELSE 0 END AS EsPrincipal
+        FROM dbo.OITM T0
+        INNER JOIN dbo.OITW T1
+          ON T1.ItemCode = T0.ItemCode
+        INNER JOIN dbo.OWHS T2
+          ON T2.WhsCode = T1.WhsCode
+        WHERE T0.validFor = 'Y'
+          AND T0.frozenFor = 'N'
+          AND T0.InvntItem = 'Y'
+          AND (
+            T0.ItemCode = @codigo
+            OR EXISTS (
+              SELECT 1
+              FROM dbo.OMLT O
+              INNER JOIN dbo.MLT1 M
+                ON M.TranEntry = O.TranEntry
+              WHERE CONVERT(nvarchar(max), O.PK) = @codigo
+                AND CONVERT(nvarchar(max), M.Trans) = CONVERT(nvarchar(max), T0.ItemCode)
+            )
+          )
+        ORDER BY
+          CASE WHEN T0.ItemCode = @codigo THEN 0 ELSE 1 END,
+          T0.ItemCode,
+          T2.WhsName
+      `);
+
+    return result.recordset;
+  } catch (error) {
+    if (isMissingObjectError(error)) {
+      throw new Error(
+        `No fue posible consultar las equivalencias porque falta una tabla SAP en ${(
+          await getActiveSapCompany()
+        ).label}. Revisa OITM, OITW, OWHS, OMLT o MLT1.`,
       );
     }
 
