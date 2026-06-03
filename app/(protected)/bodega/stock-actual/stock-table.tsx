@@ -164,6 +164,14 @@ function DetailPanel({
                         {row.NombreProveedor}
                       </p>
                     </div>
+                    <div className="sm:col-span-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                        Solicitante
+                      </p>
+                      <p className="mt-1 text-sm font-medium text-slate-900">
+                        {row.SlpName || "-"}
+                      </p>
+                    </div>
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
                         Cantidad total
@@ -215,10 +223,15 @@ export function StockActualTable({ rows }: { rows: StockActualRow[] }) {
   const [detailRows, setDetailRows] = useState<OpenPurchaseOrderRow[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [rowFilters, setRowFilters] = useState({
+    stockActual: false,
+    pedido: false,
+    stockMinimo: false,
+  });
 
   const visibleRows = useMemo(() => {
-    const filtered = rows.filter((row) =>
-      COLUMNS.every(({ key }) => {
+    const filtered = rows.filter((row) => {
+      const matchesTextFilters = COLUMNS.every(({ key }) => {
         const filter = filters[key].trim().toLowerCase();
 
         if (!filter) {
@@ -226,14 +239,40 @@ export function StockActualTable({ rows }: { rows: StockActualRow[] }) {
         }
 
         return String(row[key]).toLowerCase().includes(filter);
-      }),
-    );
+      });
+
+      if (!matchesTextFilters) {
+        return false;
+      }
+
+      if (rowFilters.stockActual && row["Stock Actual"] <= 0) {
+        return false;
+      }
+
+      if (rowFilters.pedido && row.Pedido <= 0) {
+        return false;
+      }
+
+      if (rowFilters.stockMinimo && row["Stock Minimo"] <= 0) {
+        return false;
+      }
+
+      return true;
+    });
 
     return [...filtered].sort((a, b) => {
       const comparison = compareValues(a, b, sortKey);
       return sortDirection === "asc" ? comparison : -comparison;
     });
-  }, [filters, rows, sortDirection, sortKey]);
+  }, [
+    filters,
+    rows,
+    rowFilters.pedido,
+    rowFilters.stockActual,
+    rowFilters.stockMinimo,
+    sortDirection,
+    sortKey,
+  ]);
 
   async function openDetail(row: StockActualRow) {
     setSelectedRow(row);
@@ -287,6 +326,79 @@ export function StockActualTable({ rows }: { rows: StockActualRow[] }) {
 
   return (
     <div className="relative mt-6 overflow-x-auto rounded-2xl border border-slate-200">
+      <div className="flex items-center justify-between gap-4 border-b border-slate-200 bg-white px-4 py-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-900">
+            Resultados de stock
+          </p>
+          <p className="text-xs text-slate-500">
+            Puedes ordenar, filtrar y abrir el detalle de pedidos.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              setRowFilters((current) => ({
+                ...current,
+                stockActual: !current.stockActual,
+              }))
+            }
+            className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+              rowFilters.stockActual
+                ? "border-cyan-600 bg-cyan-50 text-cyan-800 hover:bg-cyan-100"
+                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            Solo stock actual
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setRowFilters((current) => ({
+                ...current,
+                pedido: !current.pedido,
+              }))
+            }
+            className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+              rowFilters.pedido
+                ? "border-cyan-600 bg-cyan-50 text-cyan-800 hover:bg-cyan-100"
+                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            Solo pedidos
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setRowFilters((current) => ({
+                ...current,
+                stockMinimo: !current.stockMinimo,
+              }))
+            }
+            className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+              rowFilters.stockMinimo
+                ? "border-cyan-600 bg-cyan-50 text-cyan-800 hover:bg-cyan-100"
+                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            Solo stock m&iacute;nimo
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setRowFilters({
+                stockActual: false,
+                pedido: false,
+                stockMinimo: false,
+              })
+            }
+            className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+          >
+            Limpiar
+          </button>
+        </div>
+      </div>
       <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
         <thead className="bg-slate-50 text-slate-700">
           <tr>

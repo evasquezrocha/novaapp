@@ -23,6 +23,7 @@ export type OpenPurchaseOrderRow = {
   FechaEmision: string;
   FechaEntrega: string;
   NombreProveedor: string;
+  SlpName: string;
   CantidadTotal: number;
   CantidadPendiente: number;
   ValorUnitario: number;
@@ -244,6 +245,7 @@ export async function getOpenPurchaseOrdersByItemCode(
         CONVERT(varchar(10), T0.DocDate, 120) AS FechaEmision,
         CONVERT(varchar(10), T0.DocDueDate, 120) AS FechaEntrega,
         T2.CardName AS NombreProveedor,
+        COALESCE(T3.SlpName, '') AS SlpName,
         CAST(COALESCE(T1.Quantity, 0) AS decimal(18, 2)) AS CantidadTotal,
         CAST(COALESCE(T1.OpenQty, 0) AS decimal(18, 2)) AS CantidadPendiente,
         CAST(COALESCE(T1.Price, 0) AS decimal(18, 2)) AS ValorUnitario,
@@ -253,6 +255,8 @@ export async function getOpenPurchaseOrdersByItemCode(
         ON T1.DocEntry = T0.DocEntry
       INNER JOIN OCRD T2
         ON T2.CardCode = T0.CardCode
+      LEFT JOIN OSLP T3
+        ON T3.SlpCode = T0.SlpCode
       WHERE T0.DocStatus = 'O'
         AND T0.CANCELED = 'N'
         AND T1.LineStatus = 'O'
