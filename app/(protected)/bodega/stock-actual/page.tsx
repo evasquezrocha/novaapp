@@ -1,10 +1,8 @@
-import { getStockActualRows } from "@/lib/sap-stock";
-import type { StockActualRow } from "@/lib/sap-stock";
-import { StockActualTable } from "./stock-table";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AUTH_COOKIE_NAME, getSessionUserByToken } from "@/lib/auth-sql";
 import { canAccess, listPermissions } from "@/lib/permissions-sql";
+import { StockActualClient } from "./stock-actual-client";
 
 export const dynamic = "force-dynamic";
 
@@ -20,18 +18,6 @@ export default async function StockActualPage() {
   const permissions = await listPermissions();
   if (!canAccess(permissions, session.Rol, "Bodega")) {
     redirect("/forbidden");
-  }
-
-  let rows: StockActualRow[] = [];
-  let errorMessage: string | null = null;
-
-  try {
-    rows = await getStockActualRows();
-  } catch (error) {
-    errorMessage =
-      error instanceof Error
-        ? error.message
-        : "No fue posible consultar el stock actual.";
   }
 
   return (
@@ -51,13 +37,7 @@ export default async function StockActualPage() {
           .
         </p>
 
-        {errorMessage ? (
-          <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {errorMessage}
-          </div>
-        ) : (
-          <StockActualTable rows={rows} />
-        )}
+        <StockActualClient />
       </div>
     </section>
   );
