@@ -30,11 +30,7 @@ export default async function StockActualPage() {
           Stock Actual
         </h2>
         <p className="mt-4 max-w-3xl text-base leading-7 text-slate-600">
-          Consulta de articulos activos desde la base SAP definida en
-          <code className="rounded bg-slate-100 px-1.5 py-0.5 text-sm text-slate-900">
-            .env.local
-          </code>
-          .
+          Consulta de articulos activos desde la base SAP
         </p>
 
         <StockActualClient />

@@ -70,6 +70,33 @@ function formatDate(value: string) {
   }).format(date);
 }
 
+function escapeCsvCell(value: string) {
+  if (/[",\n;]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+
+  return value;
+}
+
+function downloadCsv(filename: string, rows: string[][]) {
+  const csvContent = [
+    "\ufeff",
+    ...rows.map((row) => row.map(escapeCsvCell).join(";")),
+  ].join("\n");
+
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = filename;
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 function DetailPanel({
   itemCode,
   description,
@@ -324,6 +351,26 @@ export function StockActualTable({ rows }: { rows: StockActualRow[] }) {
     setSortDirection("asc");
   }
 
+  function handleExportVisibleRows() {
+    const exportRows = [
+      COLUMNS.map((column) => column.label),
+      ...visibleRows.map((row) =>
+        COLUMNS.map((column) => {
+          const value = row[column.key];
+
+          if (typeof value === "number") {
+            return formatValue(value);
+          }
+
+          return String(value);
+        }),
+      ),
+    ];
+
+    const dateStamp = new Intl.DateTimeFormat("sv-SE").format(new Date());
+    downloadCsv(`stock-actual-${dateStamp}.csv`, exportRows);
+  }
+
   return (
     <div className="relative mt-6 overflow-x-auto rounded-2xl border border-slate-200">
       <div className="flex items-center justify-between gap-4 border-b border-slate-200 bg-white px-4 py-3">
@@ -336,6 +383,13 @@ export function StockActualTable({ rows }: { rows: StockActualRow[] }) {
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={handleExportVisibleRows}
+            className="rounded-full border border-emerald-600 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-800 transition hover:bg-emerald-100"
+          >
+            Exportar Excel
+          </button>
           <button
             type="button"
             onClick={() =>
