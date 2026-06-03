@@ -140,14 +140,6 @@ const SERVICE_COLUMNS: ColumnDef<ServicesRow>[] = [
   },
 ];
 
-const TAB_COLUMNS: Record<TabKey, Array<ColumnDef<MaterialUsedRow> | ColumnDef<ServicesRow>>> = {
-  "materiales-utilizados": MATERIAL_COLUMNS,
-  "materiales-devueltos": MATERIAL_COLUMNS,
-  "servicios-sin-oc": SERVICE_COLUMNS,
-  "servicios-utilizados": SERVICE_COLUMNS,
-  "nc-servicios": SERVICE_COLUMNS,
-};
-
 function getInitialTableState(): Record<TabKey, TableState> {
   return {
     "materiales-utilizados": { filters: {}, sort: null },
@@ -231,20 +223,20 @@ function compareCellValues(
 }
 
 function renderSortableTable<T extends Record<string, CellValue>>({
+  columns,
   tabKey,
   rows,
   emptyMessage,
   tableState,
   setTableState,
 }: {
+  columns: Array<ColumnDef<T>>;
   tabKey: TabKey;
   rows: T[];
   emptyMessage: string;
   tableState: TableState;
   setTableState: Dispatch<SetStateAction<Record<TabKey, TableState>>>;
 }) {
-  const columns = TAB_COLUMNS[tabKey] as Array<ColumnDef<T>>;
-
   const filteredRows = rows.filter((row) =>
     columns.every((column) => {
       const filter = tableState.filters[column.key]?.trim().toLowerCase();
@@ -468,7 +460,7 @@ export function DisponibleOtnClient() {
           }
         | { error: string };
 
-      if (!response.ok) {
+      if (!response.ok || "error" in data) {
         setError("error" in data ? data.error : "No fue posible consultar el OTN.");
         return;
       }
@@ -636,6 +628,7 @@ export function DisponibleOtnClient() {
                   </p>
                 </div>
                 {renderSortableTable({
+                  columns: MATERIAL_COLUMNS,
                   tabKey: "materiales-utilizados",
                   rows: materiales.rows,
                   emptyMessage: "No hay materiales utilizados para este OTN.",
@@ -660,6 +653,7 @@ export function DisponibleOtnClient() {
                   </p>
                 </div>
                 {renderSortableTable({
+                  columns: MATERIAL_COLUMNS,
                   tabKey: "materiales-devueltos",
                   rows: materialesDevueltos.rows,
                   emptyMessage: "No hay materiales devueltos para este OTN.",
@@ -684,6 +678,7 @@ export function DisponibleOtnClient() {
                   </p>
                 </div>
                 {renderSortableTable({
+                  columns: SERVICE_COLUMNS,
                   tabKey: "servicios-sin-oc",
                   rows: serviciosSinOc.rows,
                   emptyMessage: "No hay servicios utilizados sin OC para este OTN.",
@@ -708,6 +703,7 @@ export function DisponibleOtnClient() {
                   </p>
                 </div>
                 {renderSortableTable({
+                  columns: SERVICE_COLUMNS,
                   tabKey: "servicios-utilizados",
                   rows: serviciosUtilizados.rows,
                   emptyMessage: "No hay servicios utilizados para este OTN.",
@@ -732,6 +728,7 @@ export function DisponibleOtnClient() {
                   </p>
                 </div>
                 {renderSortableTable({
+                  columns: SERVICE_COLUMNS,
                   tabKey: "nc-servicios",
                   rows: ncServicios.rows,
                   emptyMessage: "No hay NC servicios para este OTN.",

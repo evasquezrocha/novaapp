@@ -121,14 +121,6 @@ type SqlEnv = {
   };
 };
 
-export type SapCompanyKey = "chile" | "novamine";
-
-export type SapCompanyConfig = {
-  key: SapCompanyKey;
-  label: string;
-  databaseEnvKey: "SQL_DATABASE_SAP" | "SQL_DATABASE_SAP2";
-};
-
 declare global {
   var __sapStockPools:
     | Partial<Record<SapCompanyKey, Promise<sql.ConnectionPool>>>
