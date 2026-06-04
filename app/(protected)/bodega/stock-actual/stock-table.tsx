@@ -6,6 +6,7 @@ import type {
   StockActualRow,
   OpenPurchaseOrderRow,
 } from "@/lib/sap-stock";
+import { formatDateDdMmYyyy } from "@/lib/date-format";
 
 type ColumnKey = keyof StockActualRow;
 type SortDirection = "asc" | "desc";
@@ -64,14 +65,7 @@ function formatCurrency(value: number) {
 }
 
 function formatDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("es-CL", {
-    dateStyle: "medium",
-  }).format(date);
+  return formatDateDdMmYyyy(value);
 }
 
 function escapeCsvCell(value: string) {

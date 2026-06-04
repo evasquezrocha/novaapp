@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { PurchaseOrderSearchMode, PurchaseOrderSearchRow } from "@/lib/sap-stock";
+import { formatDateDdMmYyyy } from "@/lib/date-format";
 
 type TabKey = PurchaseOrderSearchMode;
 type SortDirection = "asc" | "desc";
@@ -61,14 +62,7 @@ function formatAmount(value: number) {
 }
 
 function formatDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("es-CL", {
-    dateStyle: "medium",
-  }).format(date);
+  return formatDateDdMmYyyy(value);
 }
 
 function compareValues(

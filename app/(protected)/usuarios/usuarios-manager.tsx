@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ROLES } from "@/lib/permissions-config";
+import { formatDateTimeDdMmYyyy } from "@/lib/date-format";
 import type { UsuarioRow } from "@/lib/usuarios-sql";
 
 type FormState = {
@@ -23,15 +24,7 @@ const INITIAL_FORM: FormState = {
 };
 
 function formatDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("es-CL", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
+  return formatDateTimeDdMmYyyy(value);
 }
 
 export function UsuariosManager({ initialUsers }: { initialUsers: UsuarioRow[] }) {

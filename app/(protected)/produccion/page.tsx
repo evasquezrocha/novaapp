@@ -15,12 +15,20 @@ export default function ProduccionPage() {
         </p>
 
         <div className="mt-8">
-          <Link
-            href="/produccion/disponible-otn"
-            className="inline-flex items-center rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-          >
-            Disponible OTN
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/produccion/disponible-otn"
+              className="inline-flex items-center rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+            >
+              Disponible OTN
+            </Link>
+            <Link
+              href="/produccion/disponible-cc"
+              className="inline-flex items-center rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
+            >
+              Disponible CC
+            </Link>
+          </div>
         </div>
       </div>
     </section>

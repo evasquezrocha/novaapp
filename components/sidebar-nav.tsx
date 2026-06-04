@@ -35,7 +35,6 @@ export function SidebarNav({
   canSeePermisos: boolean;
 }) {
   const pathname = usePathname();
-  const isProduccionActive = pathname.startsWith("/produccion");
   const isUsuariosActive = pathname.startsWith("/usuarios");
   const isLogActive = pathname.startsWith("/configuracion/log");
   const isPermisosActive = pathname.startsWith("/configuracion/permisos");
@@ -51,9 +50,18 @@ export function SidebarNav({
           </p>
           <Link
             href="/produccion/disponible-otn"
-            className={navLinkClass(isProduccionActive)}
+            className={navLinkClass(pathname === "/produccion/disponible-otn")}
           >
             <span>Disponible OTN</span>
+            <span aria-hidden className="text-white/90">
+              →
+            </span>
+          </Link>
+          <Link
+            href="/produccion/disponible-cc"
+            className={`mt-2 ${navLinkClass(pathname === "/produccion/disponible-cc")}`}
+          >
+            <span>Disponible CC</span>
             <span aria-hidden className="text-white/90">
               →
             </span>

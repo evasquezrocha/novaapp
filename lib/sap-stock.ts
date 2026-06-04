@@ -74,6 +74,42 @@ export type MaterialesUtilizadosResult = {
   rows: MaterialesUtilizadosRow[];
 };
 
+export type MaterialesUtilizadosCcResult = {
+  total: number;
+  rows: MaterialesUtilizadosRow[];
+};
+
+export type MaterialesDevueltosCcResult = {
+  total: number;
+  rows: MaterialesDevueltosRow[];
+};
+
+export type ServiciosSinOcCcResult = {
+  total: number;
+  rows: ServiciosSinOcRow[];
+};
+
+export type ServiciosUtilizadosCcResult = {
+  total: number;
+  rows: ServiciosUtilizadosRow[];
+};
+
+export type NcServiciosCcResult = {
+  total: number;
+  rows: NcServiciosRow[];
+};
+
+export type CentroCostoCcResult = {
+  codigo: string;
+  descripcion: string;
+  presupuestoMensualMateriales: number;
+  presupuestoMensualServicios: number;
+};
+
+function getProjectCodeForCompany(company: SapCompanyConfig) {
+  return company.key === "chile" ? "130531" : "171603";
+}
+
 export type MaterialesDevueltosRow = {
   Documento: number;
   Fecha: string;
@@ -193,6 +229,39 @@ function isMissingObjectError(error: unknown) {
     typeof (error as { number?: unknown }).number === "number" &&
     (error as { number: number }).number === 208
   );
+}
+
+function getCurrentMonthRange(timeZone: string) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+
+  const parts = formatter.formatToParts(new Date());
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
+
+  if (!Number.isFinite(year) || !Number.isFinite(month)) {
+    throw new Error("No fue posible calcular el mes actual.");
+  }
+
+  const firstDay = `${year.toString().padStart(4, "0")}-${month
+    .toString()
+    .padStart(2, "0")}-01`;
+  const nextMonthStart = new Date(Date.UTC(year, month, 1));
+  const lastDayDate = new Date(nextMonthStart.getTime() - 1);
+  const lastDay = `${lastDayDate.getUTCFullYear().toString().padStart(4, "0")}-${(
+    lastDayDate.getUTCMonth() + 1
+  )
+    .toString()
+    .padStart(2, "0")}-${lastDayDate.getUTCDate().toString().padStart(2, "0")}`;
+
+  return {
+    firstDay,
+    lastDay,
+  };
 }
 
 export async function getActiveSapCompany(): Promise<SapCompanyConfig> {
@@ -535,6 +604,193 @@ export async function getMaterialesUtilizadosByOtn(
   };
 }
 
+export async function getMaterialesUtilizadosByCc(
+  cc: string,
+): Promise<MaterialesUtilizadosCcResult> {
+  const pool = await getSapPool();
+  const project = getProjectCodeForCompany(await getActiveSapCompany());
+  const { firstDay, lastDay } = getCurrentMonthRange("America/Santiago");
+
+  const [totalResult, detailResult] = await Promise.all([
+    pool.request().input("cc", cc).input("project", project).query<{ MATUTI: number }>(`
+      SELECT
+        CAST(ISNULL(SUM(T1.[StockPrice] * T1.[Quantity]), 0) AS decimal(18, 2)) AS [MATUTI]
+      FROM OIGE T0
+      INNER JOIN IGE1 T1
+        ON T0.DocEntry = T1.DocEntry
+      WHERE T1.[OcrCode] = @cc
+        AND T1.[Project] = @project
+        AND CONVERT(date, T0.DocDate) >= CONVERT(date, '${firstDay}')
+        AND CONVERT(date, T0.DocDate) <= CONVERT(date, '${lastDay}')
+    `),
+    pool.request().input("cc", cc).input("project", project).query<MaterialesUtilizadosRow>(`
+      SELECT
+        T0.DocNum AS Documento,
+        CONVERT(varchar(10), T0.DocDate, 120) AS Fecha,
+        COALESCE(T1.ItemCode, '') AS Codigo,
+        COALESCE(T1.Dscription, '') AS Descripcion,
+        CAST(COALESCE(T1.Quantity, 0) AS decimal(18, 2)) AS Cantidad,
+        CAST(COALESCE(T1.StockPrice, 0) AS decimal(18, 2)) AS PrecioUnitario,
+        CAST(COALESCE(T1.StockPrice * T1.Quantity, 0) AS decimal(18, 2)) AS TotalLinea
+      FROM OIGE T0
+      INNER JOIN IGE1 T1
+        ON T0.DocEntry = T1.DocEntry
+      WHERE T1.[OcrCode] = @cc
+        AND T1.[Project] = @project
+        AND CONVERT(date, T0.DocDate) >= CONVERT(date, '${firstDay}')
+        AND CONVERT(date, T0.DocDate) <= CONVERT(date, '${lastDay}')
+      ORDER BY T0.DocDate DESC, T0.DocNum DESC, T1.LineNum ASC
+    `),
+  ]);
+
+  return {
+    total: totalResult.recordset[0]?.MATUTI ?? 0,
+    rows: detailResult.recordset,
+  };
+}
+
+export async function getMaterialesDevueltosByCc(
+  cc: string,
+): Promise<MaterialesDevueltosCcResult> {
+  const pool = await getSapPool();
+  const project = getProjectCodeForCompany(await getActiveSapCompany());
+  const { firstDay, lastDay } = getCurrentMonthRange("America/Santiago");
+
+  const [totalResult, detailResult] = await Promise.all([
+    pool.request().input("cc", cc).input("project", project).query<{ MATDEV: number }>(`
+      SELECT
+        CAST(ISNULL(SUM(T1.[StockPrice] * T1.[Quantity]), 0) AS decimal(18, 2)) AS [MATDEV]
+      FROM OIGN T0
+      INNER JOIN IGN1 T1
+        ON T0.DocEntry = T1.DocEntry
+      WHERE T1.[OcrCode] = @cc
+        AND T1.[Project] = @project
+        AND CONVERT(date, T0.DocDate) >= CONVERT(date, '${firstDay}')
+        AND CONVERT(date, T0.DocDate) <= CONVERT(date, '${lastDay}')
+    `),
+    pool.request().input("cc", cc).input("project", project).query<MaterialesDevueltosRow>(`
+      SELECT
+        T0.DocNum AS Documento,
+        CONVERT(varchar(10), T0.DocDate, 120) AS Fecha,
+        COALESCE(T1.ItemCode, '') AS Codigo,
+        COALESCE(T1.Dscription, '') AS Descripcion,
+        CAST(COALESCE(T1.Quantity, 0) AS decimal(18, 2)) AS Cantidad,
+        CAST(COALESCE(T1.StockPrice, 0) AS decimal(18, 2)) AS PrecioUnitario,
+        CAST(COALESCE(T1.StockPrice * T1.Quantity, 0) AS decimal(18, 2)) AS TotalLinea
+      FROM OIGN T0
+      INNER JOIN IGN1 T1
+        ON T0.DocEntry = T1.DocEntry
+      WHERE T1.[OcrCode] = @cc
+        AND T1.[Project] = @project
+        AND CONVERT(date, T0.DocDate) >= CONVERT(date, '${firstDay}')
+        AND CONVERT(date, T0.DocDate) <= CONVERT(date, '${lastDay}')
+      ORDER BY T0.DocDate DESC, T0.DocNum DESC, T1.LineNum ASC
+    `),
+  ]);
+
+  return {
+    total: totalResult.recordset[0]?.MATDEV ?? 0,
+    rows: detailResult.recordset,
+  };
+}
+
+export async function getServiciosSinOcByCc(
+  cc: string,
+): Promise<ServiciosSinOcCcResult> {
+  const pool = await getSapPool();
+  const project = getProjectCodeForCompany(await getActiveSapCompany());
+  const { firstDay, lastDay } = getCurrentMonthRange("America/Santiago");
+
+  const [totalResult, detailResult] = await Promise.all([
+    pool.request().input("cc", cc).input("project", project).query<{ SERVUTISINOC: number }>(`
+      SELECT ISNULL(SUM(T1.LineTotal),0) AS [SERVUTISINOC]
+      FROM OPCH T0
+      INNER JOIN PCH1 T1
+        ON T0.DocEntry = T1.DocEntry
+      WHERE T1.[OcrCode] = @cc
+        AND T1.[Project] = @project
+        AND T0.DocType = 'S'
+        AND T0.Canceled <> 'Y'
+        AND T1.BaseDocNum IS NULL
+        AND CONVERT(date, T0.DocDate) >= CONVERT(date, '${firstDay}')
+        AND CONVERT(date, T0.DocDate) <= CONVERT(date, '${lastDay}')
+    `),
+    pool.request().input("cc", cc).input("project", project).query<ServiciosSinOcRow>(`
+      SELECT
+        T0.DocNum AS Documento,
+        CONVERT(varchar(10), T0.DocDate, 120) AS Fecha,
+        COALESCE(T0.CardName, '') AS Proveedor,
+        COALESCE(T1.Dscription, '') AS Descripcion,
+        CAST(COALESCE(T1.LineTotal, 0) AS decimal(18, 2)) AS TotalLinea
+      FROM OPCH T0
+      INNER JOIN PCH1 T1
+        ON T0.DocEntry = T1.DocEntry
+      WHERE T1.[OcrCode] = @cc
+        AND T1.[Project] = @project
+        AND T0.DocType = 'S'
+        AND T0.Canceled <> 'Y'
+        AND T1.BaseDocNum IS NULL
+        AND CONVERT(date, T0.DocDate) >= CONVERT(date, '${firstDay}')
+        AND CONVERT(date, T0.DocDate) <= CONVERT(date, '${lastDay}')
+      ORDER BY T0.DocDate DESC, T0.DocNum DESC, T1.LineNum ASC
+    `),
+  ]);
+
+  return {
+    total: totalResult.recordset[0]?.SERVUTISINOC ?? 0,
+    rows: detailResult.recordset,
+  };
+}
+
+export async function getServiciosUtilizadosByCc(
+  cc: string,
+): Promise<ServiciosUtilizadosCcResult> {
+  const pool = await getSapPool();
+  const project = getProjectCodeForCompany(await getActiveSapCompany());
+  const { firstDay, lastDay } = getCurrentMonthRange("America/Santiago");
+
+  const [totalResult, detailResult] = await Promise.all([
+    pool.request().input("cc", cc).input("project", project).query<{ SERVUTI: number }>(`
+      SELECT
+        CAST(ISNULL(SUM(T1.LineTotal), 0) AS decimal(18, 2)) AS [SERVUTI]
+      FROM OPOR T0
+      INNER JOIN POR1 T1
+        ON T0.DocEntry = T1.DocEntry
+      WHERE T1.[OcrCode] = @cc
+        AND T1.[Project] = @project
+        AND T0.DocType = 'S'
+        AND T0.Canceled <> 'Y'
+        AND T0.Indicator <> 'NL'
+        AND CONVERT(date, T0.DocDate) >= CONVERT(date, '${firstDay}')
+        AND CONVERT(date, T0.DocDate) <= CONVERT(date, '${lastDay}')
+    `),
+    pool.request().input("cc", cc).input("project", project).query<ServiciosUtilizadosRow>(`
+      SELECT
+        T0.DocNum AS Documento,
+        CONVERT(varchar(10), T0.DocDate, 120) AS Fecha,
+        COALESCE(T0.CardName, '') AS Proveedor,
+        COALESCE(T1.Dscription, '') AS Descripcion,
+        CAST(COALESCE(T1.LineTotal, 0) AS decimal(18, 2)) AS TotalLinea
+      FROM OPOR T0
+      INNER JOIN POR1 T1
+        ON T0.DocEntry = T1.DocEntry
+      WHERE T1.[OcrCode] = @cc
+        AND T1.[Project] = @project
+        AND T0.DocType = 'S'
+        AND T0.Canceled <> 'Y'
+        AND T0.Indicator <> 'NL'
+        AND CONVERT(date, T0.DocDate) >= CONVERT(date, '${firstDay}')
+        AND CONVERT(date, T0.DocDate) <= CONVERT(date, '${lastDay}')
+      ORDER BY T0.DocDate DESC, T0.DocNum DESC, T1.LineNum ASC
+    `),
+  ]);
+
+  return {
+    total: totalResult.recordset[0]?.SERVUTI ?? 0,
+    rows: detailResult.recordset,
+  };
+}
+
 export async function getMaterialesDevueltosByOtn(
   otn: string,
 ): Promise<MaterialesDevueltosResult> {
@@ -650,6 +906,80 @@ export async function getServiciosUtilizadosByOtn(
 
   return {
     total: totalResult.recordset[0]?.SERVUTI ?? 0,
+    rows: detailResult.recordset,
+  };
+}
+
+export async function getCentroCostoByCc(cc: string): Promise<CentroCostoCcResult> {
+  const pool = await getSapPool();
+
+  const result = await pool
+    .request()
+    .input("cc", cc)
+    .query<{
+      Descripcion: string;
+      PresupuestoMensualMateriales: number;
+      PresupuestoMensualServicios: number;
+    }>(`
+    SELECT
+      COALESCE(T0.PrcName, '') AS Descripcion,
+      CAST(COALESCE(T0.[U_PptoMat], 0) AS decimal(18, 2)) AS PresupuestoMensualMateriales,
+      CAST(COALESCE(T0.[U_PptoServExt], 0) AS decimal(18, 2)) AS PresupuestoMensualServicios
+    FROM OPRC T0
+    WHERE T0.PrcCode = @cc
+  `);
+
+  return {
+    codigo: cc,
+    descripcion: result.recordset[0]?.Descripcion ?? "",
+    presupuestoMensualMateriales: result.recordset[0]?.PresupuestoMensualMateriales ?? 0,
+    presupuestoMensualServicios: result.recordset[0]?.PresupuestoMensualServicios ?? 0,
+  };
+}
+
+export async function getNcServiciosByCc(
+  cc: string,
+): Promise<NcServiciosCcResult> {
+  const pool = await getSapPool();
+  const project = getProjectCodeForCompany(await getActiveSapCompany());
+  const { firstDay, lastDay } = getCurrentMonthRange("America/Santiago");
+
+  const [totalResult, detailResult] = await Promise.all([
+    pool.request().input("cc", cc).input("project", project).query<{ SERVNC: number }>(`
+      SELECT
+        CAST(ISNULL(SUM(T1.LineTotal), 0) AS decimal(18, 2)) AS [SERVNC]
+      FROM ORPC T0
+      INNER JOIN RPC1 T1
+        ON T0.DocEntry = T1.DocEntry
+      WHERE T1.[OcrCode] = @cc
+        AND T1.[Project] = @project
+        AND T0.DocType = 'S'
+        AND T0.Canceled <> 'Y'
+        AND CONVERT(date, T0.DocDate) >= CONVERT(date, '${firstDay}')
+        AND CONVERT(date, T0.DocDate) <= CONVERT(date, '${lastDay}')
+    `),
+    pool.request().input("cc", cc).input("project", project).query<NcServiciosRow>(`
+      SELECT
+        T0.DocNum AS Documento,
+        CONVERT(varchar(10), T0.DocDate, 120) AS Fecha,
+        COALESCE(T0.CardName, '') AS Proveedor,
+        COALESCE(T1.Dscription, '') AS Descripcion,
+        CAST(COALESCE(T1.LineTotal, 0) AS decimal(18, 2)) AS TotalLinea
+      FROM ORPC T0
+      INNER JOIN RPC1 T1
+        ON T0.DocEntry = T1.DocEntry
+      WHERE T1.[OcrCode] = @cc
+        AND T1.[Project] = @project
+        AND T0.DocType = 'S'
+        AND T0.Canceled <> 'Y'
+        AND CONVERT(date, T0.DocDate) >= CONVERT(date, '${firstDay}')
+        AND CONVERT(date, T0.DocDate) <= CONVERT(date, '${lastDay}')
+      ORDER BY T0.DocDate DESC, T0.DocNum DESC, T1.LineNum ASC
+    `),
+  ]);
+
+  return {
+    total: totalResult.recordset[0]?.SERVNC ?? 0,
     rows: detailResult.recordset,
   };
 }

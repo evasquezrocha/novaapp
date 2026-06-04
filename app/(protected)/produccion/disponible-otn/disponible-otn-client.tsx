@@ -2,6 +2,7 @@
 
 import type { Dispatch, FormEvent, ReactNode, SetStateAction } from "react";
 import { useState } from "react";
+import { formatDateDdMmYyyy } from "@/lib/date-format";
 
 type ProjectRow = {
   MATPPTO: number | null;
@@ -290,15 +291,7 @@ function formatAmount(value: number | null) {
 }
 
 function formatDate(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("es-CL", {
-    dateStyle: "medium",
-  }).format(date);
+  return formatDateDdMmYyyy(value);
 }
 
 function calculateDisponibleMateriales(
