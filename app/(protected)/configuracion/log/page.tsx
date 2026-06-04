@@ -6,6 +6,7 @@ import {
   listAccessLogs,
 } from "@/lib/auth-sql";
 import { canAccess, listPermissions } from "@/lib/permissions-sql";
+import { formatUtcDateTimeInTimeZone } from "@/lib/date-format";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +69,9 @@ export default async function LogPage() {
                     {row.Usuario}
                   </td>
                   <td className="px-4 py-3 text-slate-700">{row.Nombre}</td>
-                  <td className="px-4 py-3 text-slate-700">{row.AccedidoEn}</td>
+                  <td className="px-4 py-3 text-slate-700">
+                    {formatUtcDateTimeInTimeZone(row.AccedidoEn, "America/Santiago")}
+                  </td>
                   <td className="px-4 py-3 text-slate-700">
                     {formatIp(row.DireccionIp)}
                   </td>

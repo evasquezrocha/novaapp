@@ -37,3 +37,21 @@ export function formatDateTimeDdMmYyyy(value: string) {
     date.getHours(),
   )}:${pad(date.getMinutes())}`;
 }
+
+export function formatUtcDateTimeInTimeZone(value: string, timeZone: string) {
+  const date = new Date(`${value.replace(" ", "T")}Z`);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("es-CL", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
