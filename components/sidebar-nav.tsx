@@ -27,17 +27,20 @@ export function SidebarNav({
   canSeeUsuarios,
   canSeeLog,
   canSeePermisos,
+  canSeeAdministracion,
 }: {
   canSeeProduccion: boolean;
   canSeeBodega: boolean;
   canSeeUsuarios: boolean;
   canSeeLog: boolean;
   canSeePermisos: boolean;
+  canSeeAdministracion: boolean;
 }) {
   const pathname = usePathname();
   const isUsuariosActive = pathname.startsWith("/usuarios");
   const isLogActive = pathname.startsWith("/configuracion/log");
   const isPermisosActive = pathname.startsWith("/configuracion/permisos");
+  const isActivosFijosActive = pathname.startsWith("/administracion/activos-fijos");
 
   const showConfiguracion = canSeeUsuarios || canSeeLog || canSeePermisos;
 
@@ -89,6 +92,23 @@ export function SidebarNav({
             className={`mt-2 ${sectionLinkClass(pathname === "/bodega/busqueda-en-oc")}`}
           >
             <span>Búsqueda en OC</span>
+            <span aria-hidden className="text-white/90">
+              →
+            </span>
+          </Link>
+        </div>
+      ) : null}
+
+      {canSeeAdministracion ? (
+        <div className="rounded-2xl border border-[#f3d2b1]/20 bg-white/4 p-3">
+          <p className="px-1 pb-2 text-xs font-semibold uppercase tracking-[0.32em] text-[#f3d2b1]">
+            Administración
+          </p>
+          <Link
+            href="/administracion/activos-fijos"
+            className={navLinkClass(isActivosFijosActive)}
+          >
+            <span>Activos Fijos</span>
             <span aria-hidden className="text-white/90">
               →
             </span>

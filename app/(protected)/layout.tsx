@@ -32,6 +32,7 @@ export default async function ProtectedLayout({
   const canSeeUsuarios = canAccess(permissions, session.Rol, "Usuarios");
   const canSeeLog = canAccess(permissions, session.Rol, "Log");
   const canSeePermisos = canAccess(permissions, session.Rol, "Permisos");
+  const canSeeAdministracion = canAccess(permissions, session.Rol, "Administración");
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[280px_1fr]">
@@ -58,6 +59,7 @@ export default async function ProtectedLayout({
           canSeeUsuarios={canSeeUsuarios}
           canSeeLog={canSeeLog}
           canSeePermisos={canSeePermisos}
+          canSeeAdministracion={canSeeAdministracion}
         />
 
         <SessionCard name={session.Nombre} role={session.Rol} />

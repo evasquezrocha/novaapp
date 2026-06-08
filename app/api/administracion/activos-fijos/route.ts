@@ -1,0 +1,98 @@
+import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { AUTH_COOKIE_NAME, getSessionUserByToken } from "@/lib/auth-sql";
+import {
+  createActivoFijo,
+  listActivosFijosCatalogos,
+  listActivosFijos,
+} from "@/lib/activos-fijos-sql";
+import { canAccess, listPermissions } from "@/lib/permissions-sql";
+
+export const dynamic = "force-dynamic";
+
+export async function GET() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
+  const session = token ? await getSessionUserByToken(token) : null;
+  if (!session) {
+    return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+  }
+
+  const permissions = await listPermissions();
+  if (!canAccess(permissions, session.Rol, "Administración")) {
+    return NextResponse.json({ error: "No autorizado." }, { status: 403 });
+  }
+
+  try {
+    const [activos, catalogos] = await Promise.all([
+      listActivosFijos(),
+      listActivosFijosCatalogos(),
+    ]);
+
+    return NextResponse.json({ activos, catalogos });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "No fue posible listar los activos fijos.";
+
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
+  const session = token ? await getSessionUserByToken(token) : null;
+  if (!session) {
+    return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+  }
+
+  const permissions = await listPermissions();
+  if (!canAccess(permissions, session.Rol, "Administración", "Crear")) {
+    return NextResponse.json({ error: "No autorizado." }, { status: 403 });
+  }
+
+  try {
+    const body = (await request.json()) as {
+      AF?: string;
+      OC?: string | null;
+      Descripcion?: string;
+      TipoActivoId?: number | null;
+      MarcaId?: number | null;
+      Modelo?: string | null;
+      SeriePatente?: string | null;
+      Anio?: number | null;
+      Observacion?: string | null;
+      GrupoContableId?: number | null;
+    };
+
+    const AF = body.AF?.trim();
+    const Descripcion = body.Descripcion?.trim();
+
+    if (!AF || !Descripcion) {
+      return NextResponse.json(
+        { error: "Faltan campos obligatorios para crear el activo fijo." },
+        { status: 400 },
+      );
+    }
+
+    await createActivoFijo({
+      AF,
+      OC: body.OC?.trim() || null,
+      Descripcion,
+      TipoActivoId: body.TipoActivoId ?? null,
+      MarcaId: body.MarcaId ?? null,
+      Modelo: body.Modelo?.trim() || null,
+      SeriePatente: body.SeriePatente?.trim() || null,
+      Anio: body.Anio ?? null,
+      Observacion: body.Observacion?.trim() || null,
+      GrupoContableId: body.GrupoContableId ?? null,
+    });
+
+    return NextResponse.json({ ok: true }, { status: 201 });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "No fue posible crear el activo fijo.";
+
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
