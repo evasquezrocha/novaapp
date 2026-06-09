@@ -15,7 +15,8 @@ export default async function Home() {
 
   const permissions = await listPermissions();
   const allowedModules = [
-    { href: "/produccion/disponible-otn", label: "Producción", module: "Producción" },
+    { href: "/produccion", label: "Producción", module: "Producción" },
+    { href: "/produccion/sistema-otn", label: "Sistema OTN", module: "Sistema OTN" },
     { href: "/bodega/stock-actual", label: "Bodega", module: "Bodega" },
     { href: "/usuarios", label: "Usuarios", module: "Usuarios" },
     { href: "/configuracion/log", label: "Log", module: "Log" },

@@ -21,7 +21,7 @@ function defaultAllowed(role: string, module: string, action: string) {
   }
 
   if (role === "Operador") {
-    return action === "Ver" && (module === "Producción" || module === "Bodega");
+    return action === "Ver" && (module === "Producción" || module === "Sistema OTN" || module === "Bodega");
   }
 
   return false;

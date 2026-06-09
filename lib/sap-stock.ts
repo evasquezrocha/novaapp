@@ -4,6 +4,7 @@ import {
   COMPANY_COOKIE_NAME,
   SAP_COMPANIES,
   isSapCompanyKey,
+  resolveSapCompanyKeyFromEmpresa,
   type SapCompanyConfig,
   type SapCompanyKey,
 } from "@/lib/company-config";
@@ -51,6 +52,29 @@ export type OpenPurchaseOrderRow = {
   CantidadPendiente: number;
   ValorUnitario: number;
   ValorTotal: number;
+};
+
+export type SalesInvoiceLineRow = {
+  LineNum: number;
+  DescripcionLinea: string;
+  Cantidad: number;
+  PrecioUnitario: number;
+  ValorTotal: number;
+};
+
+export type SalesInvoiceRow = {
+  DocEntry: number;
+  NumeroFV: number;
+  FolioNum: number | null;
+  Fecha: string;
+  FechaVencimiento: string;
+  Total: number;
+  TotalPendiente: number;
+  lineas: SalesInvoiceLineRow[];
+};
+
+export type SalesInvoiceResult = {
+  rows: SalesInvoiceRow[];
 };
 
 export type ProjectBudgetRow = {
@@ -162,6 +186,28 @@ export type NcServiciosRow = {
 export type NcServiciosResult = {
   total: number;
   rows: NcServiciosRow[];
+};
+
+export type SalesCreditNoteLineRow = {
+  LineNum: number;
+  DescripcionLinea: string;
+  Cantidad: number;
+  PrecioUnitario: number;
+  ValorTotal: number;
+};
+
+export type SalesCreditNoteRow = {
+  DocEntry: number;
+  NumeroNC: number;
+  Fecha: string;
+  TotalNeto: number;
+  FacturaRef: string;
+  lineas: SalesCreditNoteLineRow[];
+};
+
+export type SalesCreditNoteResult = {
+  total: number;
+  rows: SalesCreditNoteRow[];
 };
 
 export type AsientosDirectosRow = {
@@ -307,6 +353,12 @@ function buildConfig(company: SapCompanyConfig): SqlEnv {
 export async function getSapPool() {
   const company = await getActiveSapCompany();
 
+  return getSapPoolForCompany(company.key);
+}
+
+export async function getSapPoolForCompany(companyKey: SapCompanyKey) {
+  const company = SAP_COMPANIES[companyKey];
+
   if (!global.__sapStockPools) {
     global.__sapStockPools = {};
   }
@@ -318,6 +370,14 @@ export async function getSapPool() {
   }
 
   return global.__sapStockPools[company.key]!;
+}
+
+export async function getSapPoolForOtnEmpresa(empresa: string | null | undefined) {
+  return getSapPoolForCompany(resolveSapCompanyKeyFromEmpresa(empresa));
+}
+
+export function getSapCompanyKeyForOtnEmpresa(empresa: string | null | undefined) {
+  return resolveSapCompanyKeyFromEmpresa(empresa);
 }
 
 export async function getStockActualRows(): Promise<StockActualRow[]> {
@@ -569,8 +629,9 @@ export async function getProjectBudgetByOtn(
 
 export async function getMaterialesUtilizadosByOtn(
   otn: string,
+  companyKey?: SapCompanyKey | null,
 ): Promise<MaterialesUtilizadosResult> {
-  const pool = await getSapPool();
+  const pool = companyKey ? await getSapPoolForCompany(companyKey) : await getSapPool();
 
   const [totalResult, detailResult] = await Promise.all([
     pool.request().input("otn", otn).query<{ MATUTI: number }>(`
@@ -601,6 +662,83 @@ export async function getMaterialesUtilizadosByOtn(
   return {
     total: totalResult.recordset[0]?.MATUTI ?? 0,
     rows: detailResult.recordset,
+  };
+}
+
+export async function getSalesInvoicesByOtn(
+  otn: string,
+  companyKey?: SapCompanyKey | null,
+): Promise<SalesInvoiceResult> {
+  const pool = companyKey ? await getSapPoolForCompany(companyKey) : await getSapPool();
+
+  const result = await pool.request().input("otn", otn).query<
+    SalesInvoiceRow & SalesInvoiceLineRow
+  >(`
+    SELECT
+      T0.DocEntry AS DocEntry,
+      T0.DocNum AS NumeroFV,
+      T0.FolioNum AS FolioNum,
+      CONVERT(varchar(10), T0.DocDate, 120) AS Fecha,
+      CONVERT(varchar(10), T0.DocDueDate, 120) AS FechaVencimiento,
+      CAST(COALESCE(T0.DocTotal, 0) - COALESCE(T0.VatSum, 0) AS decimal(18, 2)) AS Total,
+      CAST(
+        CASE
+          WHEN COALESCE(T0.DocTotal, 0) = 0 THEN 0
+          ELSE (COALESCE(T0.DocTotal, 0) - COALESCE(T0.VatSum, 0))
+            * (
+              CASE
+                WHEN COALESCE(T0.DocTotal, 0) - COALESCE(T0.PaidToDate, 0) < 0 THEN 0
+                ELSE COALESCE(T0.DocTotal, 0) - COALESCE(T0.PaidToDate, 0)
+              END
+            )
+            / NULLIF(COALESCE(T0.DocTotal, 0), 0)
+        END
+        AS decimal(18, 2)
+      ) AS TotalPendiente,
+      T1.LineNum AS LineNum,
+      COALESCE(T1.Dscription, '') AS DescripcionLinea,
+      CAST(COALESCE(T1.Quantity, 0) AS decimal(18, 2)) AS Cantidad,
+      CAST(COALESCE(T1.Price, 0) AS decimal(18, 2)) AS PrecioUnitario,
+      CAST(COALESCE(T1.LineTotal, 0) AS decimal(18, 2)) AS ValorTotal
+    FROM OINV T0
+    INNER JOIN INV1 T1
+      ON T0.DocEntry = T1.DocEntry
+    WHERE T0.CANCELED = 'N'
+      AND T1.[Project] = @otn
+    ORDER BY T0.DocDate DESC, T0.DocNum DESC, T1.LineNum ASC
+  `);
+
+  const grouped = new Map<number, SalesInvoiceRow>();
+
+  for (const row of result.recordset) {
+    const existing = grouped.get(row.DocEntry);
+    const line: SalesInvoiceLineRow = {
+      LineNum: row.LineNum,
+      DescripcionLinea: row.DescripcionLinea,
+      Cantidad: row.Cantidad,
+      PrecioUnitario: row.PrecioUnitario,
+      ValorTotal: row.ValorTotal,
+    };
+
+    if (!existing) {
+      grouped.set(row.DocEntry, {
+        DocEntry: row.DocEntry,
+        NumeroFV: row.NumeroFV,
+        FolioNum: row.FolioNum,
+        Fecha: row.Fecha,
+        FechaVencimiento: row.FechaVencimiento,
+        Total: row.Total,
+        TotalPendiente: row.TotalPendiente,
+        lineas: [line],
+      });
+      continue;
+    }
+
+    existing.lineas.push(line);
+  }
+
+  return {
+    rows: Array.from(grouped.values()),
   };
 }
 
@@ -1018,6 +1156,66 @@ export async function getNcServiciosByOtn(otn: string): Promise<NcServiciosResul
   return {
     total: totalResult.recordset[0]?.SERVNC ?? 0,
     rows: detailResult.recordset,
+  };
+}
+
+export async function getSalesCreditNotesByOtn(
+  otn: string,
+  companyKey?: SapCompanyKey | null,
+): Promise<SalesCreditNoteResult> {
+  const pool = companyKey ? await getSapPoolForCompany(companyKey) : await getSapPool();
+
+  const result = await pool.request().input("otn", otn).query<SalesCreditNoteRow & SalesCreditNoteLineRow>(`
+    SELECT
+      T0.DocEntry AS DocEntry,
+      T0.DocNum AS NumeroNC,
+      CONVERT(varchar(10), T0.DocDate, 120) AS Fecha,
+      CAST(COALESCE(T0.DocTotal, 0) - COALESCE(T0.VatSum, 0) AS decimal(18, 2)) AS TotalNeto,
+      COALESCE(CONVERT(varchar(50), T0.U_Folio_Ref), '') AS FacturaRef,
+      T1.LineNum AS LineNum,
+      COALESCE(T1.Dscription, '') AS DescripcionLinea,
+      CAST(COALESCE(T1.Quantity, 0) AS decimal(18, 2)) AS Cantidad,
+      CAST(COALESCE(T1.Price, 0) AS decimal(18, 2)) AS PrecioUnitario,
+      CAST(COALESCE(T1.LineTotal, 0) AS decimal(18, 2)) AS ValorTotal
+    FROM ORIN T0
+    INNER JOIN RIN1 T1
+      ON T0.DocEntry = T1.DocEntry
+    WHERE T0.CANCELED = 'N'
+      AND T1.[Project] = @otn
+    ORDER BY T0.DocDate DESC, T0.DocNum DESC, T1.LineNum ASC
+  `);
+
+  const grouped = new Map<number, SalesCreditNoteRow>();
+
+  for (const row of result.recordset) {
+    const existing = grouped.get(row.DocEntry);
+    const line: SalesCreditNoteLineRow = {
+      LineNum: row.LineNum,
+      DescripcionLinea: row.DescripcionLinea,
+      Cantidad: row.Cantidad,
+      PrecioUnitario: row.PrecioUnitario,
+      ValorTotal: row.ValorTotal,
+    };
+
+    if (!existing) {
+      grouped.set(row.DocEntry, {
+        DocEntry: row.DocEntry,
+        NumeroNC: row.NumeroNC,
+        Fecha: row.Fecha,
+        TotalNeto: row.TotalNeto,
+        FacturaRef: row.FacturaRef,
+        lineas: [line],
+      });
+      continue;
+    }
+
+    existing.lineas.push(line);
+  }
+
+  const rows = Array.from(grouped.values());
+  return {
+    total: rows.reduce((sum, row) => sum + row.TotalNeto, 0),
+    rows,
   };
 }
 

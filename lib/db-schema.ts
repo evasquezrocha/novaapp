@@ -22,6 +22,9 @@ type DbEnv = {
 declare global {
   var __dbSchemaInit: Promise<void> | undefined;
   var __dbSchemaActivosFijosInit: Promise<void> | undefined;
+  var __dbSchemaSistemaOtnInit: Promise<void> | undefined;
+  var __dbSchemaSistemaOtnAprobacionesInit: Promise<void> | undefined;
+  var __dbSchemaSistemaOtnEntregasManualesInit: Promise<void> | undefined;
 }
 
 function buildConfig(): DbEnv {
@@ -57,7 +60,10 @@ function splitSqlBatches(sqlText: string) {
 }
 
 async function runSqlFile(pool: sql.ConnectionPool, relativePath: string) {
-  const sqlText = await fs.readFile(path.join(process.cwd(), relativePath), "utf8");
+  const sqlText = await fs.readFile(
+    path.join(/* turbopackIgnore: true */ process.cwd(), relativePath),
+    "utf8",
+  );
 
   for (const batch of splitSqlBatches(sqlText)) {
     await pool.request().batch(batch);
@@ -78,6 +84,111 @@ async function tableExists(pool: sql.ConnectionPool, tableName: string) {
   return Boolean(result.recordset[0]?.Exists);
 }
 
+const CREATE_SISTEMA_OTN_APROBACIONES_SQL = `
+IF OBJECT_ID('dbo.SistemaOtnAprobaciones', 'U') IS NULL
+BEGIN
+  CREATE TABLE dbo.SistemaOtnAprobaciones (
+    Id INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_SistemaOtnAprobaciones PRIMARY KEY,
+    OTN NVARCHAR(50) NOT NULL,
+    FechaAprobacion DATE NOT NULL,
+    ValorAprobado DECIMAL(18,2) NOT NULL,
+    OC NVARCHAR(100) NULL,
+    ReferenciaCliente NVARCHAR(150) NULL,
+    CreadoEn DATETIME2(0) NOT NULL CONSTRAINT DF_SistemaOtnAprobaciones_CreadoEn DEFAULT SYSUTCDATETIME(),
+    ActualizadoEn DATETIME2(0) NOT NULL CONSTRAINT DF_SistemaOtnAprobaciones_ActualizadoEn DEFAULT SYSUTCDATETIME()
+  );
+
+  CREATE INDEX IX_SistemaOtnAprobaciones_OTN
+    ON dbo.SistemaOtnAprobaciones(OTN);
+END;
+`;
+
+async function ensureSistemaOtnAprobacionesSchema(pool: sql.ConnectionPool) {
+  const hasAprobaciones = await tableExists(pool, "dbo.SistemaOtnAprobaciones");
+
+  if (!hasAprobaciones) {
+    for (const batch of splitSqlBatches(CREATE_SISTEMA_OTN_APROBACIONES_SQL)) {
+      await pool.request().batch(batch);
+    }
+  }
+}
+
+const ADD_SISTEMA_OTN_EMPRESA_SQL = `
+IF OBJECT_ID('dbo.SistemaOtn', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.SistemaOtn', 'Empresa') IS NULL
+BEGIN
+  ALTER TABLE dbo.SistemaOtn
+    ADD Empresa NVARCHAR(50) NULL;
+END;
+`;
+
+const ADD_SISTEMA_OTN_ENTREGA_FUENTE_COLUMN_SQL = `
+IF OBJECT_ID('dbo.SistemaOtn', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.SistemaOtn', 'EntregaFuente') IS NULL
+BEGIN
+  ALTER TABLE dbo.SistemaOtn
+    ADD EntregaFuente NVARCHAR(10) NOT NULL
+      CONSTRAINT DF_SistemaOtn_EntregaFuente DEFAULT N'sap'
+      WITH VALUES;
+END;
+`;
+
+const FIX_SISTEMA_OTN_ENTREGA_FUENTE_SQL = `
+IF OBJECT_ID('dbo.SistemaOtn', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.SistemaOtn', 'EntregaFuente') IS NOT NULL
+BEGIN
+  UPDATE dbo.SistemaOtn
+    SET EntregaFuente = N'sap'
+  WHERE EntregaFuente IS NULL
+     OR LTRIM(RTRIM(EntregaFuente)) = N'';
+END;
+`;
+
+const FIX_SISTEMA_OTN_EQUIPO_SQL = `
+IF OBJECT_ID('dbo.SistemaOtn', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.SistemaOtn', 'Equipo') IS NOT NULL
+BEGIN
+  UPDATE dbo.SistemaOtn
+    SET Equipo = N'Sí'
+  WHERE Equipo IS NULL
+     OR LTRIM(RTRIM(Equipo)) = N''
+     OR Equipo = N'SÃ­';
+END;
+`;
+
+async function ensureSistemaOtnSchema(pool: sql.ConnectionPool) {
+  const hasSistemaOtn = await tableExists(pool, "dbo.SistemaOtn");
+
+  if (!hasSistemaOtn) {
+    await runSqlFile(pool, "sql/create-sistema-otn-table.sql");
+    return;
+  }
+
+  for (const batch of splitSqlBatches(ADD_SISTEMA_OTN_EMPRESA_SQL)) {
+    await pool.request().batch(batch);
+  }
+
+  for (const batch of splitSqlBatches(ADD_SISTEMA_OTN_ENTREGA_FUENTE_COLUMN_SQL)) {
+    await pool.request().batch(batch);
+  }
+
+  for (const batch of splitSqlBatches(FIX_SISTEMA_OTN_ENTREGA_FUENTE_SQL)) {
+    await pool.request().batch(batch);
+  }
+
+  for (const batch of splitSqlBatches(FIX_SISTEMA_OTN_EQUIPO_SQL)) {
+    await pool.request().batch(batch);
+  }
+}
+
+async function ensureSistemaOtnEntregasManualesSchema(pool: sql.ConnectionPool) {
+  const hasEntregasManuales = await tableExists(pool, "dbo.SistemaOtnEntregasManuales");
+
+  if (!hasEntregasManuales) {
+    await runSqlFile(pool, "sql/create-sistema-otn-entregas-manuales-table.sql");
+  }
+}
+
 export async function ensureDatabaseSchema() {
   if (!global.__dbSchemaInit) {
     global.__dbSchemaInit = (async () => {
@@ -85,7 +196,7 @@ export async function ensureDatabaseSchema() {
 
       try {
         const usuariosSql = await fs.readFile(
-          path.join(process.cwd(), "sql/create-usuarios-table.sql"),
+          path.join(/* turbopackIgnore: true */ process.cwd(), "sql/create-usuarios-table.sql"),
           "utf8",
         );
         for (const batch of splitSqlBatches(usuariosSql)) {
@@ -93,7 +204,7 @@ export async function ensureDatabaseSchema() {
         }
 
         const authSql = await fs.readFile(
-          path.join(process.cwd(), "sql/create-auth-tables.sql"),
+          path.join(/* turbopackIgnore: true */ process.cwd(), "sql/create-auth-tables.sql"),
           "utf8",
         );
         for (const batch of splitSqlBatches(authSql)) {
@@ -101,7 +212,10 @@ export async function ensureDatabaseSchema() {
         }
 
         const accessLogsSql = await fs.readFile(
-          path.join(process.cwd(), "sql/create-access-logs-table.sql"),
+          path.join(
+            /* turbopackIgnore: true */ process.cwd(),
+            "sql/create-access-logs-table.sql",
+          ),
           "utf8",
         );
         for (const batch of splitSqlBatches(accessLogsSql)) {
@@ -109,7 +223,10 @@ export async function ensureDatabaseSchema() {
         }
 
         const permissionsSql = await fs.readFile(
-          path.join(process.cwd(), "sql/create-permissions-table.sql"),
+          path.join(
+            /* turbopackIgnore: true */ process.cwd(),
+            "sql/create-permissions-table.sql",
+          ),
           "utf8",
         );
         for (const batch of splitSqlBatches(permissionsSql)) {
@@ -136,7 +253,12 @@ export async function ensureDatabaseSchema() {
           "dbo.ActivosFijosGruposContables",
         );
 
-        if (!hasActivosFijosTypes || !hasActivosFijos || !hasActivosFijosMarcas || !hasActivosFijosGrupos) {
+        if (
+          !hasActivosFijosTypes ||
+          !hasActivosFijos ||
+          !hasActivosFijosMarcas ||
+          !hasActivosFijosGrupos
+        ) {
           await runSqlFile(pool, "sql/create-activos-fijos-table.sql");
         }
       } finally {
@@ -146,4 +268,46 @@ export async function ensureDatabaseSchema() {
   }
 
   await global.__dbSchemaActivosFijosInit;
+
+  if (!global.__dbSchemaSistemaOtnInit) {
+    global.__dbSchemaSistemaOtnInit = (async () => {
+      const pool = await new sql.ConnectionPool(buildConfig()).connect();
+
+      try {
+        await ensureSistemaOtnSchema(pool);
+      } finally {
+        await pool.close();
+      }
+    })();
+  }
+
+  await global.__dbSchemaSistemaOtnInit;
+
+  if (!global.__dbSchemaSistemaOtnAprobacionesInit) {
+    global.__dbSchemaSistemaOtnAprobacionesInit = (async () => {
+      const pool = await new sql.ConnectionPool(buildConfig()).connect();
+
+      try {
+        await ensureSistemaOtnAprobacionesSchema(pool);
+      } finally {
+        await pool.close();
+      }
+    })();
+  }
+
+  await global.__dbSchemaSistemaOtnAprobacionesInit;
+
+  if (!global.__dbSchemaSistemaOtnEntregasManualesInit) {
+    global.__dbSchemaSistemaOtnEntregasManualesInit = (async () => {
+      const pool = await new sql.ConnectionPool(buildConfig()).connect();
+
+      try {
+        await ensureSistemaOtnEntregasManualesSchema(pool);
+      } finally {
+        await pool.close();
+      }
+    })();
+  }
+
+  await global.__dbSchemaSistemaOtnEntregasManualesInit;
 }

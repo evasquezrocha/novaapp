@@ -1,6 +1,7 @@
 export const ROLES = ["Administrador", "Supervisor", "Operador"] as const;
 export const MODULES = [
   "Producción",
+  "Sistema OTN",
   "Bodega",
   "Usuarios",
   "Log",

@@ -28,6 +28,7 @@ export default async function ProtectedLayout({
   const permissions = await listPermissions();
   const company = await getActiveSapCompany();
   const canSeeProduccion = canAccess(permissions, session.Rol, "Producción");
+  const canSeeSistemaOtn = canAccess(permissions, session.Rol, "Sistema OTN");
   const canSeeBodega = canAccess(permissions, session.Rol, "Bodega");
   const canSeeUsuarios = canAccess(permissions, session.Rol, "Usuarios");
   const canSeeLog = canAccess(permissions, session.Rol, "Log");
@@ -55,6 +56,7 @@ export default async function ProtectedLayout({
 
         <SidebarNav
           canSeeProduccion={canSeeProduccion}
+          canSeeSistemaOtn={canSeeSistemaOtn}
           canSeeBodega={canSeeBodega}
           canSeeUsuarios={canSeeUsuarios}
           canSeeLog={canSeeLog}

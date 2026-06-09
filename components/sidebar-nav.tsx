@@ -23,6 +23,7 @@ function sectionLinkClass(active: boolean) {
 
 export function SidebarNav({
   canSeeProduccion,
+  canSeeSistemaOtn,
   canSeeBodega,
   canSeeUsuarios,
   canSeeLog,
@@ -30,6 +31,7 @@ export function SidebarNav({
   canSeeAdministracion,
 }: {
   canSeeProduccion: boolean;
+  canSeeSistemaOtn: boolean;
   canSeeBodega: boolean;
   canSeeUsuarios: boolean;
   canSeeLog: boolean;
@@ -65,6 +67,34 @@ export function SidebarNav({
             className={`mt-2 ${navLinkClass(pathname === "/produccion/disponible-cc")}`}
           >
             <span>Disponible CC</span>
+            <span aria-hidden className="text-white/90">
+              →
+            </span>
+          </Link>
+        </div>
+      ) : null}
+
+      {canSeeSistemaOtn ? (
+        <div className="rounded-2xl border border-[#f3d2b1]/20 bg-white/4 p-3">
+          <p className="px-1 pb-2 text-xs font-semibold uppercase tracking-[0.32em] text-[#f3d2b1]">
+            Sistema OTN
+          </p>
+          <Link
+            href="/produccion/sistema-otn"
+            className={navLinkClass(pathname === "/produccion/sistema-otn")}
+          >
+            <span>Sistema OTN</span>
+            <span aria-hidden className="text-white/90">
+              →
+            </span>
+          </Link>
+          <Link
+            href="/produccion/sistema-otn/ficha-otn"
+            className={`mt-2 ${navLinkClass(
+              pathname === "/produccion/sistema-otn/ficha-otn",
+            )}`}
+          >
+            <span>Ficha OTN</span>
             <span aria-hidden className="text-white/90">
               →
             </span>
@@ -122,10 +152,7 @@ export function SidebarNav({
             Configuración
           </p>
           {canSeeUsuarios ? (
-            <Link
-              href="/usuarios"
-              className={navLinkClass(isUsuariosActive)}
-            >
+            <Link href="/usuarios" className={navLinkClass(isUsuariosActive)}>
               <span>Usuarios</span>
               <span aria-hidden className="text-white/90">
                 →

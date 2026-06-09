@@ -21,3 +21,18 @@ export const SAP_COMPANY_OPTIONS = [SAP_COMPANIES.chile, SAP_COMPANIES.novamine]
 export function isSapCompanyKey(value: unknown): value is SapCompanyKey {
   return value === "chile" || value === "novamine";
 }
+
+export function resolveSapCompanyKeyFromEmpresa(value: string | null | undefined): SapCompanyKey {
+  const normalized = value?.trim().toLowerCase();
+
+  if (normalized === "novamine chile") {
+    return "chile";
+  }
+
+  if (normalized === "novamine") {
+    return "novamine";
+  }
+
+  const fallbackValue = process.env.APP_COMPANY?.trim().toLowerCase();
+  return fallbackValue === "novamine" ? "novamine" : "chile";
+}
