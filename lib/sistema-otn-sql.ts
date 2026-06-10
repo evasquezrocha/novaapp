@@ -1,4 +1,5 @@
 import sql from "mssql";
+import { revalidateTag, unstable_cache } from "next/cache";
 import { ensureDatabaseSchema } from "@/lib/db-schema";
 import { getAuthPool } from "@/lib/auth-sql";
 import { getSistemaOtnAprobacionesRowsByOtn } from "@/lib/sistema-otn-aprobaciones-sql";
@@ -10,6 +11,10 @@ import {
 } from "@/lib/sap-stock";
 import { resolveSapCompanyKeyFromEmpresa } from "@/lib/company-config";
 import { getSistemaOtnEstado } from "@/lib/sistema-otn-estado";
+import {
+  DEFAULT_CACHE_REVALIDATE_SECONDS,
+  PLATFORM_CACHE_TAGS,
+} from "@/lib/platform-cache";
 
 export type SistemaOtnRow = {
   Id: number;
@@ -127,6 +132,173 @@ async function getPool() {
   return getAuthPool();
 }
 
+const listSistemaOtnRowsCached = unstable_cache(
+  async () => {
+    const pool = await getPool();
+    const includeEmpresa = await ensureEmpresaColumn(pool);
+    const includeEntregaFuente = await ensureEntregaFuenteColumn(pool);
+
+    const result = await pool.request().query<SistemaOtnRow>(`
+      SELECT
+        Id,
+        OTN,
+        Estado,
+        CONVERT(varchar(10), FechaIngreso, 23) AS FechaIngreso,
+        Cliente,
+        ${includeEmpresa ? "Empresa" : "CAST(NULL AS NVARCHAR(50)) AS Empresa"},
+        ${includeEntregaFuente ? "EntregaFuente" : "CAST(NULL AS NVARCHAR(10)) AS EntregaFuente"},
+        Solicitante,
+        CC,
+        Cantidad,
+        Descripcion,
+        ReferenciaCliente,
+        Cotizador,
+        Equipo,
+        CONVERT(varchar(10), FechaPpto, 23) AS FechaPpto,
+        ValorPpto,
+        Plazo,
+        Observaciones,
+        Ruta,
+        CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
+        CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
+      FROM dbo.SistemaOtn
+      ORDER BY Id DESC
+    `);
+
+    const rows = result.recordset.map(normalizeRow);
+
+    return Promise.all(
+      rows.map(async (row) => {
+        const totals = await getSistemaOtnTotales(
+          row.OTN,
+          row.ValorPpto,
+          row.Empresa,
+          row.EntregaFuente,
+        );
+
+        return {
+          ...row,
+          EstadoDerivado: totals.estadoDerivado,
+          TotalPresupuesto: totals.totalPresupuesto,
+          TotalAprobado: totals.totalAprobado,
+          TotalEntregado: totals.totalEntregado,
+          TotalFacturado: totals.totalFacturado,
+          TotalNotasCredito: totals.totalNotasCredito,
+          TotalPendiente: totals.totalPendiente,
+        };
+      }),
+    ).then((decoratedRows) =>
+      decoratedRows.map((row) => ({
+        ...row,
+        Estado: row.EstadoDerivado ?? row.Estado ?? "Ingresado",
+      })),
+    );
+  },
+  ["platform", "sistema-otn", "list"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.sistemaOtn],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
+
+async function fetchSistemaOtnRowById(id: number) {
+  const pool = await getPool();
+  const includeEmpresa = await ensureEmpresaColumn(pool);
+  const includeEntregaFuente = await ensureEntregaFuenteColumn(pool);
+
+  const result = await pool
+    .request()
+    .query<SistemaOtnRow>(`
+      SELECT TOP 1
+        Id,
+        OTN,
+        Estado,
+        CONVERT(varchar(10), FechaIngreso, 23) AS FechaIngreso,
+        Cliente,
+        ${includeEmpresa ? "Empresa" : "CAST(NULL AS NVARCHAR(50)) AS Empresa"},
+        ${includeEntregaFuente ? "EntregaFuente" : "CAST(NULL AS NVARCHAR(10)) AS EntregaFuente"},
+        Solicitante,
+        CC,
+        Cantidad,
+        Descripcion,
+        ReferenciaCliente,
+        Cotizador,
+        Equipo,
+        CONVERT(varchar(10), FechaPpto, 23) AS FechaPpto,
+        ValorPpto,
+        Plazo,
+        Observaciones,
+        Ruta,
+        CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
+        CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
+      FROM dbo.SistemaOtn
+      WHERE Id = ${id}
+    `);
+
+  return result.recordset[0] ? normalizeRow(result.recordset[0]) : null;
+}
+
+const getSistemaOtnRowByIdCached = unstable_cache(
+  async (id: number) => {
+    return fetchSistemaOtnRowById(id);
+  },
+  ["platform", "sistema-otn", "by-id"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.sistemaOtn],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
+
+const getSistemaOtnRowByOtnCached = unstable_cache(
+  async (otn: string) => {
+    const normalizedOtn = otn.trim();
+    if (!normalizedOtn) {
+      return null;
+    }
+
+    const pool = await getPool();
+    const includeEmpresa = await ensureEmpresaColumn(pool);
+    const includeEntregaFuente = await ensureEntregaFuenteColumn(pool);
+
+    const result = await pool
+      .request()
+      .input("otn", normalizedOtn)
+      .query<SistemaOtnRow>(`
+        SELECT TOP 1
+          Id,
+          OTN,
+          Estado,
+          CONVERT(varchar(10), FechaIngreso, 23) AS FechaIngreso,
+          Cliente,
+          ${includeEmpresa ? "Empresa" : "CAST(NULL AS NVARCHAR(50)) AS Empresa"},
+          ${includeEntregaFuente ? "EntregaFuente" : "CAST(NULL AS NVARCHAR(10)) AS EntregaFuente"},
+          Solicitante,
+          CC,
+          Cantidad,
+          Descripcion,
+          ReferenciaCliente,
+          Cotizador,
+          Equipo,
+          CONVERT(varchar(10), FechaPpto, 23) AS FechaPpto,
+          ValorPpto,
+          Plazo,
+          Observaciones,
+          Ruta,
+          CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
+          CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
+        FROM dbo.SistemaOtn
+        WHERE OTN = @otn
+      `);
+
+    return result.recordset[0] ? normalizeRow(result.recordset[0]) : null;
+  },
+  ["platform", "sistema-otn", "by-otn"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.sistemaOtn],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
+
 async function ensureEmpresaColumn(pool: sql.ConnectionPool) {
   const result = await pool.request().query<{ HasEmpresa: number }>(`
     SELECT CASE
@@ -210,145 +382,19 @@ async function getSistemaOtnTotales(
 }
 
 export async function listSistemaOtnRows(): Promise<SistemaOtnRow[]> {
-  const pool = await getPool();
-  const includeEmpresa = await ensureEmpresaColumn(pool);
-  const includeEntregaFuente = await ensureEntregaFuenteColumn(pool);
-
-  const result = await pool.request().query<SistemaOtnRow>(`
-    SELECT
-      Id,
-      OTN,
-      Estado,
-      CONVERT(varchar(10), FechaIngreso, 23) AS FechaIngreso,
-      Cliente,
-      ${includeEmpresa ? "Empresa" : "CAST(NULL AS NVARCHAR(50)) AS Empresa"},
-      ${includeEntregaFuente ? "EntregaFuente" : "CAST(NULL AS NVARCHAR(10)) AS EntregaFuente"},
-      Solicitante,
-      CC,
-      Cantidad,
-      Descripcion,
-      ReferenciaCliente,
-      Cotizador,
-      Equipo,
-      CONVERT(varchar(10), FechaPpto, 23) AS FechaPpto,
-      ValorPpto,
-      Plazo,
-      Observaciones,
-      Ruta,
-      CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
-      CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
-    FROM dbo.SistemaOtn
-    ORDER BY Id DESC
-  `);
-
-  const rows = result.recordset.map(normalizeRow);
-
-  return Promise.all(
-    rows.map(async (row) => {
-      const totals = await getSistemaOtnTotales(
-        row.OTN,
-        row.ValorPpto,
-        row.Empresa,
-        row.EntregaFuente,
-      );
-
-      return {
-        ...row,
-        EstadoDerivado: totals.estadoDerivado,
-        TotalPresupuesto: totals.totalPresupuesto,
-        TotalAprobado: totals.totalAprobado,
-        TotalEntregado: totals.totalEntregado,
-        TotalFacturado: totals.totalFacturado,
-        TotalNotasCredito: totals.totalNotasCredito,
-        TotalPendiente: totals.totalPendiente,
-      };
-    }),
-  ).then((decoratedRows) =>
-    decoratedRows.map((row) => ({
-      ...row,
-      Estado: row.EstadoDerivado ?? row.Estado ?? "Ingresado",
-    })),
-  );
+  return listSistemaOtnRowsCached();
 }
 
 export async function getSistemaOtnRowById(id: number): Promise<SistemaOtnRow | null> {
-  const pool = await getPool();
-  const includeEmpresa = await ensureEmpresaColumn(pool);
-  const includeEntregaFuente = await ensureEntregaFuenteColumn(pool);
+  return getSistemaOtnRowByIdCached(id);
+}
 
-  const result = await pool
-    .request()
-    .query<SistemaOtnRow>(`
-      SELECT TOP 1
-        Id,
-        OTN,
-        Estado,
-        CONVERT(varchar(10), FechaIngreso, 23) AS FechaIngreso,
-        Cliente,
-        ${includeEmpresa ? "Empresa" : "CAST(NULL AS NVARCHAR(50)) AS Empresa"},
-        ${includeEntregaFuente ? "EntregaFuente" : "CAST(NULL AS NVARCHAR(10)) AS EntregaFuente"},
-        Solicitante,
-        CC,
-        Cantidad,
-        Descripcion,
-        ReferenciaCliente,
-        Cotizador,
-        Equipo,
-        CONVERT(varchar(10), FechaPpto, 23) AS FechaPpto,
-        ValorPpto,
-        Plazo,
-        Observaciones,
-        Ruta,
-        CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
-        CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
-      FROM dbo.SistemaOtn
-      WHERE Id = ${id}
-    `);
-
-  return result.recordset[0] ? normalizeRow(result.recordset[0]) : null;
+export async function getSistemaOtnRowByIdFresh(id: number): Promise<SistemaOtnRow | null> {
+  return fetchSistemaOtnRowById(id);
 }
 
 export async function getSistemaOtnRowByOtn(otn: string): Promise<SistemaOtnRow | null> {
-  const normalizedOtn = otn.trim();
-  if (!normalizedOtn) {
-    return null;
-  }
-
-  const pool = await getPool();
-  const includeEmpresa = await ensureEmpresaColumn(pool);
-  const includeEntregaFuente = await ensureEntregaFuenteColumn(pool);
-
-  const result = await pool
-    .request()
-    .input("otn", normalizedOtn)
-    .query<SistemaOtnRow>(`
-      SELECT TOP 1
-        Id,
-        OTN,
-        Estado,
-        CONVERT(varchar(10), FechaIngreso, 23) AS FechaIngreso,
-        Cliente,
-        ${includeEmpresa ? "Empresa" : "CAST(NULL AS NVARCHAR(50)) AS Empresa"},
-        ${includeEntregaFuente ? "EntregaFuente" : "CAST(NULL AS NVARCHAR(10)) AS EntregaFuente"},
-        Solicitante,
-        CC,
-        Cantidad,
-        Descripcion,
-        ReferenciaCliente,
-        Cotizador,
-        Equipo,
-        CONVERT(varchar(10), FechaPpto, 23) AS FechaPpto,
-        ValorPpto,
-        Plazo,
-        Observaciones,
-        Ruta,
-        CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
-        CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
-      FROM dbo.SistemaOtn
-      WHERE OTN = @otn
-    `);
-
-  return result.recordset[0] ? normalizeRow(result.recordset[0]) : null;
+  return getSistemaOtnRowByOtnCached(otn);
 }
 
 export async function createSistemaOtnRow(input: SistemaOtnInput) {
@@ -485,6 +531,8 @@ export async function createSistemaOtnRow(input: SistemaOtnInput) {
           @ruta
         )
     `);
+
+  revalidateTag(PLATFORM_CACHE_TAGS.sistemaOtn, "max");
 }
 
 export async function updateSistemaOtnRow(id: number, input: SistemaOtnInput) {
@@ -582,6 +630,8 @@ export async function updateSistemaOtnRow(id: number, input: SistemaOtnInput) {
         ActualizadoEn = SYSUTCDATETIME()
       WHERE Id = ${id}
     `);
+
+  revalidateTag(PLATFORM_CACHE_TAGS.sistemaOtn, "max");
 }
 
 export async function deleteSistemaOtnRow(id: number) {
@@ -589,4 +639,6 @@ export async function deleteSistemaOtnRow(id: number) {
   await pool
     .request()
     .query(`DELETE FROM dbo.SistemaOtn WHERE Id = ${id}`);
+
+  revalidateTag(PLATFORM_CACHE_TAGS.sistemaOtn, "max");
 }

@@ -1,4 +1,5 @@
 import sql from "mssql";
+import { cache } from "react";
 import { cookies } from "next/headers";
 import {
   COMPANY_COOKIE_NAME,
@@ -310,7 +311,7 @@ function getCurrentMonthRange(timeZone: string) {
   };
 }
 
-export async function getActiveSapCompany(): Promise<SapCompanyConfig> {
+export const getActiveSapCompany = cache(async (): Promise<SapCompanyConfig> => {
   const cookieStore = await cookies();
   const cookieValue = cookieStore.get(COMPANY_COOKIE_NAME)?.value;
 
@@ -322,7 +323,7 @@ export async function getActiveSapCompany(): Promise<SapCompanyConfig> {
   const fallbackKey: SapCompanyKey = value === "novamine" ? "novamine" : "chile";
 
   return SAP_COMPANIES[fallbackKey];
-}
+});
 
 function buildConfig(company: SapCompanyConfig): SqlEnv {
   const port = Number(process.env.SQL_PORT ?? "1433");

@@ -33,13 +33,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const session = await createSession(user);
     const forwardedFor = request.headers.get("x-forwarded-for");
     const realIp = request.headers.get("x-real-ip");
     const ipAddress =
       forwardedFor?.split(",")[0]?.trim() || realIp || request.headers.get("cf-connecting-ip");
 
-    await recordAccessLog(user, ipAddress);
+    const session = await createSession(user);
+    void recordAccessLog(user, ipAddress).catch(() => undefined);
 
     const response = NextResponse.json({ ok: true, user });
 

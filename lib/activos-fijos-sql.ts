@@ -1,4 +1,9 @@
+import { revalidateTag, unstable_cache } from "next/cache";
 import { getAuthPool } from "@/lib/auth-sql";
+import {
+  DEFAULT_CACHE_REVALIDATE_SECONDS,
+  PLATFORM_CACHE_TAGS,
+} from "@/lib/platform-cache";
 
 export type CatalogRow = {
   Id: number;
@@ -74,37 +79,82 @@ function normalizeCatalogRow(row: CatalogRow): CatalogRow {
   };
 }
 
-export async function listActivosFijos(): Promise<ActivoFijoRow[]> {
-  const pool = await getAuthPool();
-  const result = await pool.request().query<ActivoFijoRow>(`
-    SELECT
-      AF.Id,
-      AF.AF,
-      AF.OC,
-      AF.Descripcion,
-      AF.TipoActivoId,
-      T.Nombre AS TipoActivo,
-      AF.MarcaId,
-      M.Nombre AS Marca,
-      AF.Modelo,
-      AF.SeriePatente,
-      AF.Anio,
-      AF.Observacion,
-      AF.GrupoContableId,
-      G.Nombre AS GrupoContable,
-      CONVERT(varchar(19), AF.CreadoEn, 120) AS CreadoEn,
-      CONVERT(varchar(19), AF.ActualizadoEn, 120) AS ActualizadoEn
-    FROM dbo.ActivosFijos AF
-    LEFT JOIN dbo.ActivosFijosTipos T
-      ON T.Id = AF.TipoActivoId
-    LEFT JOIN dbo.ActivosFijosMarcas M
-      ON M.Id = AF.MarcaId
-    LEFT JOIN dbo.ActivosFijosGruposContables G
-      ON G.Id = AF.GrupoContableId
-    ORDER BY AF.AF ASC, AF.Id DESC
-  `);
+const listActivosFijosCached = unstable_cache(
+  async () => {
+    const pool = await getAuthPool();
+    const result = await pool.request().query<ActivoFijoRow>(`
+      SELECT
+        AF.Id,
+        AF.AF,
+        AF.OC,
+        AF.Descripcion,
+        AF.TipoActivoId,
+        T.Nombre AS TipoActivo,
+        AF.MarcaId,
+        M.Nombre AS Marca,
+        AF.Modelo,
+        AF.SeriePatente,
+        AF.Anio,
+        AF.Observacion,
+        AF.GrupoContableId,
+        G.Nombre AS GrupoContable,
+        CONVERT(varchar(19), AF.CreadoEn, 120) AS CreadoEn,
+        CONVERT(varchar(19), AF.ActualizadoEn, 120) AS ActualizadoEn
+      FROM dbo.ActivosFijos AF
+      LEFT JOIN dbo.ActivosFijosTipos T
+        ON T.Id = AF.TipoActivoId
+      LEFT JOIN dbo.ActivosFijosMarcas M
+        ON M.Id = AF.MarcaId
+      LEFT JOIN dbo.ActivosFijosGruposContables G
+        ON G.Id = AF.GrupoContableId
+      ORDER BY AF.AF ASC, AF.Id DESC
+    `);
 
-  return result.recordset;
+    return result.recordset;
+  },
+  ["platform", "activos-fijos", "list"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.activosFijos],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
+
+const listActivosFijosCatalogosCached = unstable_cache(
+  async () => {
+    const pool = await getAuthPool();
+    const [tipos, marcas, gruposContables] = await Promise.all([
+      pool.request().query<CatalogRow>(`
+        SELECT Id, Nombre
+        FROM dbo.ActivosFijosTipos
+        ORDER BY Nombre ASC, Id ASC
+      `),
+      pool.request().query<CatalogRow>(`
+        SELECT Id, Nombre
+        FROM dbo.ActivosFijosMarcas
+        ORDER BY Nombre ASC, Id ASC
+      `),
+      pool.request().query<CatalogRow>(`
+        SELECT Id, Nombre
+        FROM dbo.ActivosFijosGruposContables
+        ORDER BY Nombre ASC, Id ASC
+      `),
+    ]);
+
+    return {
+      tipos: tipos.recordset.map(normalizeCatalogRow),
+      marcas: marcas.recordset.map(normalizeCatalogRow),
+      gruposContables: gruposContables.recordset.map(normalizeCatalogRow),
+    };
+  },
+  ["platform", "activos-fijos", "catalogos"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.activosFijos],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
+
+export async function listActivosFijos(): Promise<ActivoFijoRow[]> {
+  return listActivosFijosCached();
 }
 
 export async function getActivoFijoById(id: number): Promise<ActivoFijoRow | null> {
@@ -141,30 +191,7 @@ export async function getActivoFijoById(id: number): Promise<ActivoFijoRow | nul
 }
 
 export async function listActivosFijosCatalogos(): Promise<ActivoFijoCatalogos> {
-  const pool = await getAuthPool();
-  const [tipos, marcas, gruposContables] = await Promise.all([
-    pool.request().query<CatalogRow>(`
-      SELECT Id, Nombre
-      FROM dbo.ActivosFijosTipos
-      ORDER BY Nombre ASC, Id ASC
-    `),
-    pool.request().query<CatalogRow>(`
-      SELECT Id, Nombre
-      FROM dbo.ActivosFijosMarcas
-      ORDER BY Nombre ASC, Id ASC
-    `),
-    pool.request().query<CatalogRow>(`
-      SELECT Id, Nombre
-      FROM dbo.ActivosFijosGruposContables
-      ORDER BY Nombre ASC, Id ASC
-    `),
-  ]);
-
-  return {
-    tipos: tipos.recordset.map(normalizeCatalogRow),
-    marcas: marcas.recordset.map(normalizeCatalogRow),
-    gruposContables: gruposContables.recordset.map(normalizeCatalogRow),
-  };
+  return listActivosFijosCatalogosCached();
 }
 
 export async function listActivosFijosPageData() {
@@ -210,6 +237,8 @@ export async function createActivoFijo(input: {
     VALUES
       (${AF}, ${OC}, ${Descripcion}, ${TipoActivoId}, ${MarcaId}, ${Modelo}, ${SeriePatente}, ${Anio}, ${Observacion}, ${GrupoContableId})
   `);
+
+  revalidateTag(PLATFORM_CACHE_TAGS.activosFijos, "max");
 }
 
 export async function updateActivoFijo(input: {
@@ -253,6 +282,8 @@ export async function updateActivoFijo(input: {
       ActualizadoEn = SYSUTCDATETIME()
     WHERE Id = ${input.id}
   `);
+
+  revalidateTag(PLATFORM_CACHE_TAGS.activosFijos, "max");
 }
 
 export async function createCatalogItem(category: CatalogKey, nombre: string) {
@@ -266,6 +297,8 @@ export async function createCatalogItem(category: CatalogKey, nombre: string) {
     VALUES
       (N'${safeNombre}')
   `);
+
+  revalidateTag(PLATFORM_CACHE_TAGS.activosFijos, "max");
 }
 
 export async function getCatalogItemByName(category: CatalogKey, nombre: string) {

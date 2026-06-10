@@ -10,7 +10,9 @@ BEGIN
     CONSTRAINT FK_AccesosLog_Usuarios FOREIGN KEY (UsuarioId) REFERENCES dbo.Usuarios(Id) ON DELETE CASCADE
   );
 
-  CREATE INDEX IX_AccesosLog_AccedidoEn ON dbo.AccesosLog(AccedidoEn DESC);
+  CREATE INDEX IX_AccesosLog_AccedidoEn_Id
+    ON dbo.AccesosLog(AccedidoEn DESC, Id DESC)
+    INCLUDE (UsuarioId, Usuario, Nombre, DireccionIp);
   CREATE INDEX IX_AccesosLog_UsuarioId ON dbo.AccesosLog(UsuarioId);
 END;
 GO

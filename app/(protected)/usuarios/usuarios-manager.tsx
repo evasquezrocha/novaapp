@@ -27,6 +27,16 @@ function formatDate(value: string) {
   return formatDateTimeDdMmYyyy(value);
 }
 
+async function readJsonOrText(response: Response) {
+  const contentType = response.headers.get("content-type") ?? "";
+
+  if (contentType.includes("application/json")) {
+    return (await response.json()) as unknown;
+  }
+
+  return { error: await response.text() };
+}
+
 export function UsuariosManager({ initialUsers }: { initialUsers: UsuarioRow[] }) {
   const [users, setUsers] = useState(initialUsers);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -61,7 +71,7 @@ export function UsuariosManager({ initialUsers }: { initialUsers: UsuarioRow[] }
 
   async function refreshUsers() {
     const response = await fetch("/api/usuarios", { cache: "no-store" });
-    const payload = (await response.json()) as {
+    const payload = (await readJsonOrText(response)) as {
       rows?: UsuarioRow[];
       error?: string;
     };
@@ -101,7 +111,7 @@ export function UsuariosManager({ initialUsers }: { initialUsers: UsuarioRow[] }
         },
       );
 
-      const data = (await response.json()) as { error?: string };
+      const data = (await readJsonOrText(response)) as { error?: string };
 
       if (!response.ok) {
         throw new Error(
@@ -137,7 +147,7 @@ export function UsuariosManager({ initialUsers }: { initialUsers: UsuarioRow[] }
         method: "DELETE",
       });
 
-      const data = (await response.json()) as { error?: string };
+      const data = (await readJsonOrText(response)) as { error?: string };
       if (!response.ok) {
         throw new Error(data.error ?? "No fue posible eliminar el usuario.");
       }

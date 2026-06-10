@@ -31,7 +31,6 @@ export function LoginForm() {
       }
 
       router.replace("/");
-      router.refresh();
     } catch (submissionError) {
       setError(
         submissionError instanceof Error

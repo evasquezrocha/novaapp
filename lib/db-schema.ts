@@ -98,8 +98,69 @@ BEGIN
     ActualizadoEn DATETIME2(0) NOT NULL CONSTRAINT DF_SistemaOtnAprobaciones_ActualizadoEn DEFAULT SYSUTCDATETIME()
   );
 
-  CREATE INDEX IX_SistemaOtnAprobaciones_OTN
-    ON dbo.SistemaOtnAprobaciones(OTN);
+  CREATE INDEX IX_SistemaOtnAprobaciones_OTN_FechaAprobacion_Id
+    ON dbo.SistemaOtnAprobaciones(OTN, FechaAprobacion DESC, Id DESC)
+    INCLUDE (ValorAprobado, OC, ReferenciaCliente, CreadoEn, ActualizadoEn);
+END;
+`;
+
+const ENSURE_ACCESS_LOGS_INDEX_SQL = `
+IF OBJECT_ID('dbo.AccesosLog', 'U') IS NOT NULL
+AND NOT EXISTS (
+  SELECT 1
+  FROM sys.indexes
+  WHERE object_id = OBJECT_ID('dbo.AccesosLog')
+    AND name = 'IX_AccesosLog_AccedidoEn_Id'
+)
+BEGIN
+  CREATE INDEX IX_AccesosLog_AccedidoEn_Id
+    ON dbo.AccesosLog(AccedidoEn DESC, Id DESC)
+    INCLUDE (UsuarioId, Usuario, Nombre, DireccionIp);
+END;
+`;
+
+const ENSURE_USUARIOS_INDEX_SQL = `
+IF OBJECT_ID('dbo.Usuarios', 'U') IS NOT NULL
+AND NOT EXISTS (
+  SELECT 1
+  FROM sys.indexes
+  WHERE object_id = OBJECT_ID('dbo.Usuarios')
+    AND name = 'IX_Usuarios_Nombre_Id'
+)
+BEGIN
+  CREATE INDEX IX_Usuarios_Nombre_Id
+    ON dbo.Usuarios(Nombre ASC, Id DESC)
+    INCLUDE (Usuario, Correo, Rol, Activo, CreadoEn, ActualizadoEn);
+END;
+`;
+
+const ENSURE_SISTEMA_OTN_APROBACIONES_INDEX_SQL = `
+IF OBJECT_ID('dbo.SistemaOtnAprobaciones', 'U') IS NOT NULL
+AND NOT EXISTS (
+  SELECT 1
+  FROM sys.indexes
+  WHERE object_id = OBJECT_ID('dbo.SistemaOtnAprobaciones')
+    AND name = 'IX_SistemaOtnAprobaciones_OTN_FechaAprobacion_Id'
+)
+BEGIN
+  CREATE INDEX IX_SistemaOtnAprobaciones_OTN_FechaAprobacion_Id
+    ON dbo.SistemaOtnAprobaciones(OTN, FechaAprobacion DESC, Id DESC)
+    INCLUDE (ValorAprobado, OC, ReferenciaCliente, CreadoEn, ActualizadoEn);
+END;
+`;
+
+const ENSURE_SISTEMA_OTN_ENTREGAS_MANUALES_INDEX_SQL = `
+IF OBJECT_ID('dbo.SistemaOtnEntregasManuales', 'U') IS NOT NULL
+AND NOT EXISTS (
+  SELECT 1
+  FROM sys.indexes
+  WHERE object_id = OBJECT_ID('dbo.SistemaOtnEntregasManuales')
+    AND name = 'IX_SistemaOtnEntregasManuales_OTN_FechaEntrega_Id'
+)
+BEGIN
+  CREATE INDEX IX_SistemaOtnEntregasManuales_OTN_FechaEntrega_Id
+    ON dbo.SistemaOtnEntregasManuales(OTN, FechaEntrega DESC, Id DESC)
+    INCLUDE (ValorEntrega, ReferenciaEntrega, CreadoEn, ActualizadoEn);
 END;
 `;
 
@@ -110,6 +171,11 @@ async function ensureSistemaOtnAprobacionesSchema(pool: sql.ConnectionPool) {
     for (const batch of splitSqlBatches(CREATE_SISTEMA_OTN_APROBACIONES_SQL)) {
       await pool.request().batch(batch);
     }
+    return;
+  }
+
+  for (const batch of splitSqlBatches(ENSURE_SISTEMA_OTN_APROBACIONES_INDEX_SQL)) {
+    await pool.request().batch(batch);
   }
 }
 
@@ -186,6 +252,11 @@ async function ensureSistemaOtnEntregasManualesSchema(pool: sql.ConnectionPool) 
 
   if (!hasEntregasManuales) {
     await runSqlFile(pool, "sql/create-sistema-otn-entregas-manuales-table.sql");
+    return;
+  }
+
+  for (const batch of splitSqlBatches(ENSURE_SISTEMA_OTN_ENTREGAS_MANUALES_INDEX_SQL)) {
+    await pool.request().batch(batch);
   }
 }
 
@@ -222,6 +293,10 @@ export async function ensureDatabaseSchema() {
           await pool.request().batch(batch);
         }
 
+        for (const batch of splitSqlBatches(ENSURE_ACCESS_LOGS_INDEX_SQL)) {
+          await pool.request().batch(batch);
+        }
+
         const permissionsSql = await fs.readFile(
           path.join(
             /* turbopackIgnore: true */ process.cwd(),
@@ -230,6 +305,10 @@ export async function ensureDatabaseSchema() {
           "utf8",
         );
         for (const batch of splitSqlBatches(permissionsSql)) {
+          await pool.request().batch(batch);
+        }
+
+        for (const batch of splitSqlBatches(ENSURE_USUARIOS_INDEX_SQL)) {
           await pool.request().batch(batch);
         }
       } finally {

@@ -1,6 +1,11 @@
 import sql from "mssql";
+import { revalidateTag, unstable_cache } from "next/cache";
 import { getAuthPool } from "@/lib/auth-sql";
 import { ACTIONS, MODULES, ROLES } from "@/lib/permissions-config";
+import {
+  DEFAULT_CACHE_REVALIDATE_SECONDS,
+  PLATFORM_CACHE_TAGS,
+} from "@/lib/platform-cache";
 
 export type PermissionRow = {
   Rol: string;
@@ -58,6 +63,15 @@ async function readStoredPermissions(): Promise<StoredPermissionRow[]> {
   }));
 }
 
+const readStoredPermissionsCached = unstable_cache(
+  async () => readStoredPermissions(),
+  ["platform", "permissions"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.permissions],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
+
 function mergePermissions(
   defaults: PermissionRow[],
   stored: StoredPermissionRow[],
@@ -78,7 +92,7 @@ function mergePermissions(
 
 export async function listPermissions(): Promise<PermissionRow[]> {
   const defaults = buildDefaultPermissions();
-  const stored = await readStoredPermissions();
+  const stored = await readStoredPermissionsCached();
   return mergePermissions(defaults, stored);
 }
 
@@ -123,6 +137,7 @@ export async function savePermissions(rows: PermissionRow[]) {
     }
 
     await transaction.commit();
+    revalidateTag(PLATFORM_CACHE_TAGS.permissions, "max");
   } catch (error) {
     await transaction.rollback();
     throw error;

@@ -5,6 +5,7 @@ import { canAccess, listPermissions } from "@/lib/permissions-sql";
 import {
   deleteSistemaOtnRow,
   getSistemaOtnRowById,
+  getSistemaOtnRowByIdFresh,
   updateSistemaOtnRow,
 } from "@/lib/sistema-otn-sql";
 
@@ -136,7 +137,7 @@ export async function PUT(
       Ruta: pickCurrent(body.Ruta, currentRow.Ruta),
     });
 
-    const row = await getSistemaOtnRowById(parsedId);
+    const row = await getSistemaOtnRowByIdFresh(parsedId);
 
     return NextResponse.json({ ok: true, row });
   } catch (error) {

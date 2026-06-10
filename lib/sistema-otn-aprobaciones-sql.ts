@@ -1,5 +1,10 @@
 import { ensureDatabaseSchema } from "@/lib/db-schema";
+import { revalidateTag, unstable_cache } from "next/cache";
 import { getAuthPool } from "@/lib/auth-sql";
+import {
+  DEFAULT_CACHE_REVALIDATE_SECONDS,
+  PLATFORM_CACHE_TAGS,
+} from "@/lib/platform-cache";
 
 export type SistemaOtnAprobacionRow = {
   Id: number;
@@ -46,38 +51,10 @@ async function getPool() {
   return getAuthPool();
 }
 
-export async function listSistemaOtnAprobacionesRows(): Promise<SistemaOtnAprobacionRow[]> {
-  const pool = await getPool();
-  const result = await pool.request().query<SistemaOtnAprobacionRow>(`
-    SELECT
-      Id,
-      OTN,
-      CONVERT(varchar(10), FechaAprobacion, 23) AS FechaAprobacion,
-      ValorAprobado,
-      OC,
-      ReferenciaCliente,
-      CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
-      CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
-    FROM dbo.SistemaOtnAprobaciones
-    ORDER BY Id DESC
-  `);
-
-  return result.recordset;
-}
-
-export async function getSistemaOtnAprobacionesRowsByOtn(
-  otn: string,
-): Promise<SistemaOtnAprobacionRow[]> {
-  const normalizedOtn = otn.trim();
-  if (!normalizedOtn) {
-    return [];
-  }
-
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("otn", normalizedOtn)
-    .query<SistemaOtnAprobacionRow>(`
+const listSistemaOtnAprobacionesCached = unstable_cache(
+  async () => {
+    const pool = await getPool();
+    const result = await pool.request().query<SistemaOtnAprobacionRow>(`
       SELECT
         Id,
         OTN,
@@ -88,11 +65,61 @@ export async function getSistemaOtnAprobacionesRowsByOtn(
         CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
         CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
       FROM dbo.SistemaOtnAprobaciones
-      WHERE OTN = @otn
       ORDER BY Id DESC
     `);
 
-  return result.recordset;
+    return result.recordset;
+  },
+  ["platform", "sistema-otn", "aprobaciones", "list"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.sistemaOtn],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
+
+const getSistemaOtnAprobacionesRowsByOtnCached = unstable_cache(
+  async (otn: string) => {
+    const normalizedOtn = otn.trim();
+    if (!normalizedOtn) {
+      return [];
+    }
+
+    const pool = await getPool();
+    const result = await pool
+      .request()
+      .input("otn", normalizedOtn)
+      .query<SistemaOtnAprobacionRow>(`
+        SELECT
+          Id,
+          OTN,
+          CONVERT(varchar(10), FechaAprobacion, 23) AS FechaAprobacion,
+          ValorAprobado,
+          OC,
+          ReferenciaCliente,
+          CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
+          CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
+        FROM dbo.SistemaOtnAprobaciones
+        WHERE OTN = @otn
+        ORDER BY Id DESC
+      `);
+
+    return result.recordset;
+  },
+  ["platform", "sistema-otn", "aprobaciones", "otn"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.sistemaOtn],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
+
+export async function listSistemaOtnAprobacionesRows(): Promise<SistemaOtnAprobacionRow[]> {
+  return listSistemaOtnAprobacionesCached();
+}
+
+export async function getSistemaOtnAprobacionesRowsByOtn(
+  otn: string,
+): Promise<SistemaOtnAprobacionRow[]> {
+  return getSistemaOtnAprobacionesRowsByOtnCached(otn);
 }
 
 export async function createSistemaOtnAprobacionRow(input: SistemaOtnAprobacionInput) {
@@ -123,6 +150,8 @@ export async function createSistemaOtnAprobacionRow(input: SistemaOtnAprobacionI
           @referenciaCliente
         )
     `);
+
+  revalidateTag(PLATFORM_CACHE_TAGS.sistemaOtn, "max");
 }
 
 export async function updateSistemaOtnAprobacionRow(
@@ -147,6 +176,10 @@ export async function updateSistemaOtnAprobacionRow(
       WHERE Id = ${id}
     `);
 
+  if (result.rowsAffected[0] ?? 0) {
+    revalidateTag(PLATFORM_CACHE_TAGS.sistemaOtn, "max");
+  }
+
   return result.rowsAffected[0] ?? 0;
 }
 
@@ -158,6 +191,10 @@ export async function deleteSistemaOtnAprobacionRow(id: number) {
       DELETE FROM dbo.SistemaOtnAprobaciones
       WHERE Id = ${id}
     `);
+
+  if (result.rowsAffected[0] ?? 0) {
+    revalidateTag(PLATFORM_CACHE_TAGS.sistemaOtn, "max");
+  }
 
   return result.rowsAffected[0] ?? 0;
 }

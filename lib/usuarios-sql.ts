@@ -1,6 +1,11 @@
 import sql from "mssql";
+import { revalidateTag, unstable_cache } from "next/cache";
 import { pbkdf2, randomBytes } from "node:crypto";
 import { ensureDatabaseSchema } from "@/lib/db-schema";
+import {
+  DEFAULT_CACHE_REVALIDATE_SECONDS,
+  PLATFORM_CACHE_TAGS,
+} from "@/lib/platform-cache";
 
 export type UsuarioRow = {
   Id: number;
@@ -103,10 +108,10 @@ function toSqlHex(buffer: Buffer) {
   return `0x${buffer.toString("hex")}`;
 }
 
-export async function listUsuarios(): Promise<UsuarioRow[]> {
-  const query = async () => {
+const listUsuariosCached = unstable_cache(
+  async () => {
     const pool = await getPool();
-    return pool
+    const result = await pool
       .request()
       .query<UsuarioRow>(`
         SELECT
@@ -121,11 +126,19 @@ export async function listUsuarios(): Promise<UsuarioRow[]> {
         FROM dbo.Usuarios
         ORDER BY Nombre ASC, Id DESC
       `);
-  };
 
-  try {
-    const result = await query();
     return result.recordset.map(normalizeUsuarioRow);
+  },
+  ["platform", "usuarios"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.usuarios],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
+
+export async function listUsuarios(): Promise<UsuarioRow[]> {
+  try {
+    return await listUsuariosCached();
   } catch (error) {
     if (!isMissingObjectError(error)) {
       throw error;
@@ -134,8 +147,7 @@ export async function listUsuarios(): Promise<UsuarioRow[]> {
     global.__usuariosPool = undefined;
     await ensureDatabaseSchema();
 
-    const result = await query();
-    return result.recordset.map(normalizeUsuarioRow);
+    return await listUsuariosCached();
   }
 }
 
@@ -271,6 +283,7 @@ export async function createUsuario(input: {
 
   try {
     await run();
+    revalidateTag(PLATFORM_CACHE_TAGS.usuarios, "max");
   } catch (error) {
     if (!isMissingObjectError(error)) {
       throw error;
@@ -331,6 +344,7 @@ export async function updateUsuario(input: {
 
   try {
     await run();
+    revalidateTag(PLATFORM_CACHE_TAGS.usuarios, "max");
   } catch (error) {
     if (!isMissingObjectError(error)) {
       throw error;
@@ -362,6 +376,7 @@ export async function updateUsuarioPassword(input: {
 
   try {
     await run();
+    revalidateTag(PLATFORM_CACHE_TAGS.usuarios, "max");
   } catch (error) {
     if (!isMissingObjectError(error)) {
       throw error;
@@ -384,6 +399,7 @@ export async function deleteUsuario(id: number) {
 
   try {
     await run();
+    revalidateTag(PLATFORM_CACHE_TAGS.usuarios, "max");
   } catch (error) {
     if (!isMissingObjectError(error)) {
       throw error;

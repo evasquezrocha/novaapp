@@ -10,6 +10,7 @@ BEGIN
     ActualizadoEn DATETIME2(0) NOT NULL CONSTRAINT DF_SistemaOtnEntregasManuales_ActualizadoEn DEFAULT SYSUTCDATETIME()
   );
 
-  CREATE INDEX IX_SistemaOtnEntregasManuales_OTN
-    ON dbo.SistemaOtnEntregasManuales(OTN);
+  CREATE INDEX IX_SistemaOtnEntregasManuales_OTN_FechaEntrega_Id
+    ON dbo.SistemaOtnEntregasManuales(OTN, FechaEntrega DESC, Id DESC)
+    INCLUDE (ValorEntrega, ReferenciaEntrega, CreadoEn, ActualizadoEn);
 END;

@@ -1,5 +1,10 @@
 import { ensureDatabaseSchema } from "@/lib/db-schema";
+import { revalidateTag, unstable_cache } from "next/cache";
 import { getAuthPool } from "@/lib/auth-sql";
+import {
+  DEFAULT_CACHE_REVALIDATE_SECONDS,
+  PLATFORM_CACHE_TAGS,
+} from "@/lib/platform-cache";
 
 export type SistemaOtnEntregaManualRow = {
   Id: number;
@@ -37,33 +42,44 @@ async function getPool() {
   return getAuthPool();
 }
 
+const getSistemaOtnEntregasManualesRowsByOtnCached = unstable_cache(
+  async (otn: string) => {
+    const normalizedOtn = otn.trim();
+    if (!normalizedOtn) {
+      return [];
+    }
+
+    const pool = await getPool();
+    const result = await pool
+      .request()
+      .input("otn", normalizedOtn)
+      .query<SistemaOtnEntregaManualRow>(`
+        SELECT
+          Id,
+          OTN,
+          CONVERT(varchar(10), FechaEntrega, 23) AS FechaEntrega,
+          ValorEntrega,
+          ReferenciaEntrega,
+          CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
+          CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
+        FROM dbo.SistemaOtnEntregasManuales
+        WHERE OTN = @otn
+        ORDER BY FechaEntrega DESC, Id DESC
+      `);
+
+    return result.recordset;
+  },
+  ["platform", "sistema-otn", "entregas-manuales", "otn"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.sistemaOtn],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
+
 export async function listSistemaOtnEntregasManualesRowsByOtn(
   otn: string,
 ): Promise<SistemaOtnEntregaManualRow[]> {
-  const normalizedOtn = otn.trim();
-  if (!normalizedOtn) {
-    return [];
-  }
-
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("otn", normalizedOtn)
-    .query<SistemaOtnEntregaManualRow>(`
-      SELECT
-        Id,
-        OTN,
-        CONVERT(varchar(10), FechaEntrega, 23) AS FechaEntrega,
-        ValorEntrega,
-        ReferenciaEntrega,
-        CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
-        CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
-      FROM dbo.SistemaOtnEntregasManuales
-      WHERE OTN = @otn
-      ORDER BY FechaEntrega DESC, Id DESC
-    `);
-
-  return result.recordset;
+  return getSistemaOtnEntregasManualesRowsByOtnCached(otn);
 }
 
 export async function createSistemaOtnEntregaManualRow(input: SistemaOtnEntregaManualInput) {
@@ -91,6 +107,8 @@ export async function createSistemaOtnEntregaManualRow(input: SistemaOtnEntregaM
           @referenciaEntrega
         )
     `);
+
+  revalidateTag(PLATFORM_CACHE_TAGS.sistemaOtn, "max");
 }
 
 export async function deleteSistemaOtnEntregaManualRow(id: number) {
@@ -101,6 +119,10 @@ export async function deleteSistemaOtnEntregaManualRow(id: number) {
       DELETE FROM dbo.SistemaOtnEntregasManuales
       WHERE Id = ${id}
     `);
+
+  if (result.rowsAffected[0] ?? 0) {
+    revalidateTag(PLATFORM_CACHE_TAGS.sistemaOtn, "max");
+  }
 
   return result.rowsAffected[0] ?? 0;
 }
