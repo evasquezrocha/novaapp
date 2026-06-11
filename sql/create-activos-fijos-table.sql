@@ -23,6 +23,53 @@ BEGIN
 
   CREATE UNIQUE INDEX UX_ActivosFijos_AF
     ON dbo.ActivosFijos(AF);
+
+  CREATE INDEX IX_ActivosFijos_AF_Id
+    ON dbo.ActivosFijos(AF ASC, Id DESC)
+    INCLUDE (
+      OC,
+      Descripcion,
+      TipoActivoId,
+      MarcaId,
+      Modelo,
+      SeriePatente,
+      NumeroFactura,
+      FechaFactura,
+      Valor,
+      PropioLeasing,
+      TotalmenteDepreciado,
+      Anio,
+      GrupoContableId,
+      CreadoEn,
+      ActualizadoEn
+    );
+
+  CREATE INDEX IX_ActivosFijos_TipoActivoId
+    ON dbo.ActivosFijos(TipoActivoId)
+    INCLUDE (
+      AF,
+      Descripcion,
+      MarcaId,
+      GrupoContableId
+    );
+
+  CREATE INDEX IX_ActivosFijos_MarcaId
+    ON dbo.ActivosFijos(MarcaId)
+    INCLUDE (
+      AF,
+      Descripcion,
+      TipoActivoId,
+      GrupoContableId
+    );
+
+  CREATE INDEX IX_ActivosFijos_GrupoContableId
+    ON dbo.ActivosFijos(GrupoContableId)
+    INCLUDE (
+      AF,
+      Descripcion,
+      TipoActivoId,
+      MarcaId
+    );
 END;
 GO
 

@@ -29,6 +29,9 @@ declare global {
 
 function buildConfig(): DbEnv {
   const port = Number(process.env.SQL_PORT ?? "1433");
+  const poolMax = Number(process.env.SQL_POOL_MAX ?? "20");
+  const poolMin = Number(process.env.SQL_POOL_MIN ?? "0");
+  const poolIdleTimeoutMillis = Number(process.env.SQL_POOL_IDLE_TIMEOUT_MS ?? "30000");
 
   if (!process.env.SQL_SERVER || !process.env.SQL_DATABASE) {
     throw new Error("Faltan variables de entorno para SQL_DATABASE.");
@@ -45,9 +48,11 @@ function buildConfig(): DbEnv {
       trustServerCertificate: process.env.SQL_TRUST_CERT === "true",
     },
     pool: {
-      max: 10,
-      min: 0,
-      idleTimeoutMillis: 30000,
+      max: Number.isFinite(poolMax) ? poolMax : 20,
+      min: Number.isFinite(poolMin) ? poolMin : 0,
+      idleTimeoutMillis: Number.isFinite(poolIdleTimeoutMillis)
+        ? poolIdleTimeoutMillis
+        : 30000,
     },
   };
 }
@@ -164,6 +169,41 @@ BEGIN
 END;
 `;
 
+const ENSURE_SISTEMA_OTN_INDEXES_SQL = `
+IF OBJECT_ID('dbo.SistemaOtn', 'U') IS NOT NULL
+AND NOT EXISTS (
+  SELECT 1
+  FROM sys.indexes
+  WHERE object_id = OBJECT_ID('dbo.SistemaOtn')
+    AND name = 'IX_SistemaOtn_Id_DESC'
+)
+BEGIN
+  CREATE INDEX IX_SistemaOtn_Id_DESC
+    ON dbo.SistemaOtn(Id DESC)
+    INCLUDE (
+      OTN,
+      Estado,
+      FechaIngreso,
+      Cliente,
+      Empresa,
+      EntregaFuente,
+      Solicitante,
+      CC,
+      Cantidad,
+      Descripcion,
+      ReferenciaCliente,
+      Cotizador,
+      Equipo,
+      FechaPpto,
+      ValorPpto,
+      Plazo,
+      Ruta,
+      CreadoEn,
+      ActualizadoEn
+    );
+END;
+`;
+
 async function ensureSistemaOtnAprobacionesSchema(pool: sql.ConnectionPool) {
   const hasAprobaciones = await tableExists(pool, "dbo.SistemaOtnAprobaciones");
 
@@ -261,6 +301,76 @@ BEGIN
 END;
 `;
 
+const ENSURE_ACTIVOS_FIJOS_INDEXES_SQL = `
+IF OBJECT_ID('dbo.ActivosFijos', 'U') IS NOT NULL
+AND NOT EXISTS (
+  SELECT 1
+  FROM sys.indexes
+  WHERE object_id = OBJECT_ID('dbo.ActivosFijos')
+    AND name = 'IX_ActivosFijos_AF_Id'
+)
+BEGIN
+  CREATE INDEX IX_ActivosFijos_AF_Id
+    ON dbo.ActivosFijos(AF ASC, Id DESC)
+    INCLUDE (
+      OC,
+      Descripcion,
+      TipoActivoId,
+      MarcaId,
+      Modelo,
+      SeriePatente,
+      NumeroFactura,
+      FechaFactura,
+      Valor,
+      PropioLeasing,
+      TotalmenteDepreciado,
+      Anio,
+      GrupoContableId,
+      CreadoEn,
+      ActualizadoEn
+    );
+END;
+
+IF OBJECT_ID('dbo.ActivosFijos', 'U') IS NOT NULL
+AND NOT EXISTS (
+  SELECT 1
+  FROM sys.indexes
+  WHERE object_id = OBJECT_ID('dbo.ActivosFijos')
+    AND name = 'IX_ActivosFijos_TipoActivoId'
+)
+BEGIN
+  CREATE INDEX IX_ActivosFijos_TipoActivoId
+    ON dbo.ActivosFijos(TipoActivoId)
+    INCLUDE (AF, Descripcion, MarcaId, GrupoContableId);
+END;
+
+IF OBJECT_ID('dbo.ActivosFijos', 'U') IS NOT NULL
+AND NOT EXISTS (
+  SELECT 1
+  FROM sys.indexes
+  WHERE object_id = OBJECT_ID('dbo.ActivosFijos')
+    AND name = 'IX_ActivosFijos_MarcaId'
+)
+BEGIN
+  CREATE INDEX IX_ActivosFijos_MarcaId
+    ON dbo.ActivosFijos(MarcaId)
+    INCLUDE (AF, Descripcion, TipoActivoId, GrupoContableId);
+END;
+
+IF OBJECT_ID('dbo.ActivosFijos', 'U') IS NOT NULL
+AND NOT EXISTS (
+  SELECT 1
+  FROM sys.indexes
+  WHERE object_id = OBJECT_ID('dbo.ActivosFijos')
+    AND name = 'IX_ActivosFijos_GrupoContableId'
+)
+BEGIN
+  CREATE INDEX IX_ActivosFijos_GrupoContableId
+    ON dbo.ActivosFijos(GrupoContableId)
+    INCLUDE (AF, Descripcion, TipoActivoId, MarcaId);
+END;
+`;
+
 async function ensureSistemaOtnSchema(pool: sql.ConnectionPool) {
   const hasSistemaOtn = await tableExists(pool, "dbo.SistemaOtn");
 
@@ -282,6 +392,10 @@ async function ensureSistemaOtnSchema(pool: sql.ConnectionPool) {
   }
 
   for (const batch of splitSqlBatches(FIX_SISTEMA_OTN_EQUIPO_SQL)) {
+    await pool.request().batch(batch);
+  }
+
+  for (const batch of splitSqlBatches(ENSURE_SISTEMA_OTN_INDEXES_SQL)) {
     await pool.request().batch(batch);
   }
 }
@@ -308,6 +422,10 @@ async function ensureActivosFijosSchema(pool: sql.ConnectionPool) {
   }
 
   for (const batch of splitSqlBatches(ENSURE_ACTIVOS_FIJOS_COLUMNS_SQL)) {
+    await pool.request().batch(batch);
+  }
+
+  for (const batch of splitSqlBatches(ENSURE_ACTIVOS_FIJOS_INDEXES_SQL)) {
     await pool.request().batch(batch);
   }
 }

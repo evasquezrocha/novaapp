@@ -1,4 +1,3 @@
-import sql from "mssql";
 import { revalidateTag, unstable_cache } from "next/cache";
 import { ensureDatabaseSchema } from "@/lib/db-schema";
 import { getAuthPool } from "@/lib/auth-sql";
@@ -15,6 +14,7 @@ import {
   DEFAULT_CACHE_REVALIDATE_SECONDS,
   PLATFORM_CACHE_TAGS,
 } from "@/lib/platform-cache";
+import { measureAsync } from "@/lib/server-performance";
 
 export type SistemaOtnRow = {
   Id: number;
@@ -127,6 +127,31 @@ function normalizeRow(row: SistemaOtnRow): SistemaOtnRow {
   };
 }
 
+async function mapWithConcurrency<TInput, TOutput>(
+  items: TInput[],
+  concurrency: number,
+  mapper: (item: TInput) => Promise<TOutput>,
+) {
+  const results: TOutput[] = new Array(items.length);
+  let nextIndex = 0;
+
+  const workers = Array.from({ length: Math.max(1, concurrency) }, async () => {
+    while (true) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+
+      if (currentIndex >= items.length) {
+        return;
+      }
+
+      results[currentIndex] = await mapper(items[currentIndex]);
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
+}
+
 async function getPool() {
   await ensureDatabaseSchema();
   return getAuthPool();
@@ -134,64 +159,67 @@ async function getPool() {
 
 const listSistemaOtnRowsCached = unstable_cache(
   async () => {
-    const pool = await getPool();
-    const includeEmpresa = await ensureEmpresaColumn(pool);
-    const includeEntregaFuente = await ensureEntregaFuenteColumn(pool);
+    return measureAsync(
+      "sistema-otn.list",
+      async () => {
+        const pool = await getPool();
+        const result = await pool.request().query<SistemaOtnRow>(`
+          SELECT
+            Id,
+            OTN,
+            Estado,
+            CONVERT(varchar(10), FechaIngreso, 23) AS FechaIngreso,
+            Cliente,
+            Empresa,
+            EntregaFuente,
+            Solicitante,
+            CC,
+            Cantidad,
+            Descripcion,
+            ReferenciaCliente,
+            Cotizador,
+            Equipo,
+            CONVERT(varchar(10), FechaPpto, 23) AS FechaPpto,
+            ValorPpto,
+            Plazo,
+            Observaciones,
+            Ruta,
+            CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
+            CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
+          FROM dbo.SistemaOtn
+          ORDER BY Id DESC
+        `);
 
-    const result = await pool.request().query<SistemaOtnRow>(`
-      SELECT
-        Id,
-        OTN,
-        Estado,
-        CONVERT(varchar(10), FechaIngreso, 23) AS FechaIngreso,
-        Cliente,
-        ${includeEmpresa ? "Empresa" : "CAST(NULL AS NVARCHAR(50)) AS Empresa"},
-        ${includeEntregaFuente ? "EntregaFuente" : "CAST(NULL AS NVARCHAR(10)) AS EntregaFuente"},
-        Solicitante,
-        CC,
-        Cantidad,
-        Descripcion,
-        ReferenciaCliente,
-        Cotizador,
-        Equipo,
-        CONVERT(varchar(10), FechaPpto, 23) AS FechaPpto,
-        ValorPpto,
-        Plazo,
-        Observaciones,
-        Ruta,
-        CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
-        CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
-      FROM dbo.SistemaOtn
-      ORDER BY Id DESC
-    `);
+        const rows = result.recordset.map(normalizeRow);
 
-    const rows = result.recordset.map(normalizeRow);
+        return mapWithConcurrency(rows, 6, async (row) => {
+          const totals = await getSistemaOtnTotalesCached(
+            row.OTN,
+            row.ValorPpto,
+            row.Empresa,
+            row.EntregaFuente,
+          );
 
-    return Promise.all(
-      rows.map(async (row) => {
-        const totals = await getSistemaOtnTotales(
-          row.OTN,
-          row.ValorPpto,
-          row.Empresa,
-          row.EntregaFuente,
+          return {
+            ...row,
+            EstadoDerivado: totals.estadoDerivado,
+            TotalPresupuesto: totals.totalPresupuesto,
+            TotalAprobado: totals.totalAprobado,
+            TotalEntregado: totals.totalEntregado,
+            TotalFacturado: totals.totalFacturado,
+            TotalNotasCredito: totals.totalNotasCredito,
+            TotalPendiente: totals.totalPendiente,
+          };
+        }).then((decoratedRows) =>
+          decoratedRows.map((row) => ({
+            ...row,
+            Estado: row.EstadoDerivado ?? row.Estado ?? "Ingresado",
+          })),
         );
-
-        return {
-          ...row,
-          EstadoDerivado: totals.estadoDerivado,
-          TotalPresupuesto: totals.totalPresupuesto,
-          TotalAprobado: totals.totalAprobado,
-          TotalEntregado: totals.totalEntregado,
-          TotalFacturado: totals.totalFacturado,
-          TotalNotasCredito: totals.totalNotasCredito,
-          TotalPendiente: totals.totalPendiente,
-        };
-      }),
-    ).then((decoratedRows) =>
-      decoratedRows.map((row) => ({
-        ...row,
-        Estado: row.EstadoDerivado ?? row.Estado ?? "Ingresado",
-      })),
+      },
+      {
+        slowMs: 250,
+      },
     );
   },
   ["platform", "sistema-otn", "list"],
@@ -203,9 +231,6 @@ const listSistemaOtnRowsCached = unstable_cache(
 
 async function fetchSistemaOtnRowById(id: number) {
   const pool = await getPool();
-  const includeEmpresa = await ensureEmpresaColumn(pool);
-  const includeEntregaFuente = await ensureEntregaFuenteColumn(pool);
-
   const result = await pool
     .request()
     .query<SistemaOtnRow>(`
@@ -215,8 +240,8 @@ async function fetchSistemaOtnRowById(id: number) {
         Estado,
         CONVERT(varchar(10), FechaIngreso, 23) AS FechaIngreso,
         Cliente,
-        ${includeEmpresa ? "Empresa" : "CAST(NULL AS NVARCHAR(50)) AS Empresa"},
-        ${includeEntregaFuente ? "EntregaFuente" : "CAST(NULL AS NVARCHAR(10)) AS EntregaFuente"},
+        Empresa,
+        EntregaFuente,
         Solicitante,
         CC,
         Cantidad,
@@ -257,8 +282,6 @@ const getSistemaOtnRowByOtnCached = unstable_cache(
     }
 
     const pool = await getPool();
-    const includeEmpresa = await ensureEmpresaColumn(pool);
-    const includeEntregaFuente = await ensureEntregaFuenteColumn(pool);
 
     const result = await pool
       .request()
@@ -270,8 +293,8 @@ const getSistemaOtnRowByOtnCached = unstable_cache(
           Estado,
           CONVERT(varchar(10), FechaIngreso, 23) AS FechaIngreso,
           Cliente,
-          ${includeEmpresa ? "Empresa" : "CAST(NULL AS NVARCHAR(50)) AS Empresa"},
-          ${includeEntregaFuente ? "EntregaFuente" : "CAST(NULL AS NVARCHAR(10)) AS EntregaFuente"},
+          Empresa,
+          EntregaFuente,
           Solicitante,
           CC,
           Cantidad,
@@ -298,37 +321,6 @@ const getSistemaOtnRowByOtnCached = unstable_cache(
     revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
   },
 );
-
-async function ensureEmpresaColumn(pool: sql.ConnectionPool) {
-  const result = await pool.request().query<{ HasEmpresa: number }>(`
-    SELECT CASE
-      WHEN COL_LENGTH('dbo.SistemaOtn', 'Empresa') IS NULL THEN 0
-      ELSE 1
-    END AS HasEmpresa
-  `);
-
-  const hasEmpresa = Boolean(result.recordset[0]?.HasEmpresa);
-
-  if (!hasEmpresa) {
-    await pool.request().batch(`
-      ALTER TABLE dbo.SistemaOtn
-        ADD Empresa NVARCHAR(50) NULL;
-    `);
-  }
-
-  return true;
-}
-
-async function ensureEntregaFuenteColumn(pool: sql.ConnectionPool) {
-  const result = await pool.request().query<{ HasEntregaFuente: number }>(`
-    SELECT CASE
-      WHEN COL_LENGTH('dbo.SistemaOtn', 'EntregaFuente') IS NULL THEN 0
-      ELSE 1
-    END AS HasEntregaFuente
-  `);
-
-  return Boolean(result.recordset[0]?.HasEntregaFuente);
-}
 
 async function getSistemaOtnTotales(
   otn: string,
@@ -381,6 +373,29 @@ async function getSistemaOtnTotales(
   };
 }
 
+const getSistemaOtnTotalesCached = unstable_cache(
+  async (
+    otn: string,
+    totalPresupuesto: number | null | undefined,
+    empresa?: string | null,
+    entregaFuente?: string | null,
+  ) => {
+    return measureAsync(
+      "sistema-otn.totales",
+      async () => getSistemaOtnTotales(otn, totalPresupuesto, empresa, entregaFuente),
+      {
+        slowMs: 200,
+        details: `otn=${otn}`,
+      },
+    );
+  },
+  ["platform", "sistema-otn", "totales"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.sistemaOtn],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
+
 export async function listSistemaOtnRows(): Promise<SistemaOtnRow[]> {
   return listSistemaOtnRowsCached();
 }
@@ -399,76 +414,6 @@ export async function getSistemaOtnRowByOtn(otn: string): Promise<SistemaOtnRow 
 
 export async function createSistemaOtnRow(input: SistemaOtnInput) {
   const pool = await getPool();
-  const includeEmpresa = await ensureEmpresaColumn(pool);
-
-  if (includeEmpresa) {
-    await pool
-      .request()
-      .input("otn", input.OTN.trim())
-      .input("estado", normalizeEstado(input.Estado))
-      .input("entregaFuente", normalizeEntregaFuente(input.EntregaFuente))
-      .input("fechaIngreso", normalizeDate(input.FechaIngreso))
-      .input("cliente", normalizeText(input.Cliente))
-      .input("empresa", normalizeEmpresa(input.Empresa))
-      .input("solicitante", normalizeText(input.Solicitante))
-      .input("cc", normalizeText(input.CC))
-      .input("cantidad", normalizeNumber(input.Cantidad))
-      .input("descripcion", normalizeText(input.Descripcion))
-      .input("referenciaCliente", normalizeText(input.ReferenciaCliente))
-      .input("cotizador", normalizeText(input.Cotizador))
-      .input("equipo", normalizeEquipo(input.Equipo))
-      .input("fechaPpto", normalizeDate(input.FechaPpto))
-      .input("valorPpto", normalizeNumber(input.ValorPpto))
-      .input("plazo", normalizeText(input.Plazo))
-      .input("observaciones", normalizeText(input.Observaciones))
-      .input("ruta", normalizeText(input.Ruta))
-      .query(`
-        INSERT INTO dbo.SistemaOtn
-          (
-            OTN,
-            Estado,
-            EntregaFuente,
-            FechaIngreso,
-            Cliente,
-            Empresa,
-            Solicitante,
-            CC,
-            Cantidad,
-            Descripcion,
-            ReferenciaCliente,
-            Cotizador,
-            Equipo,
-            FechaPpto,
-            ValorPpto,
-            Plazo,
-            Observaciones,
-            Ruta
-          )
-        VALUES
-          (
-            @otn,
-            @estado,
-            @entregaFuente,
-            NULLIF(@fechaIngreso, ''),
-            @cliente,
-            @empresa,
-            @solicitante,
-            @cc,
-            @cantidad,
-            @descripcion,
-            @referenciaCliente,
-            @cotizador,
-            @equipo,
-            NULLIF(@fechaPpto, ''),
-            @valorPpto,
-            @plazo,
-            @observaciones,
-            @ruta
-          )
-      `);
-
-    return;
-  }
 
   await pool
     .request()
@@ -477,6 +422,7 @@ export async function createSistemaOtnRow(input: SistemaOtnInput) {
     .input("entregaFuente", normalizeEntregaFuente(input.EntregaFuente))
     .input("fechaIngreso", normalizeDate(input.FechaIngreso))
     .input("cliente", normalizeText(input.Cliente))
+    .input("empresa", normalizeEmpresa(input.Empresa))
     .input("solicitante", normalizeText(input.Solicitante))
     .input("cc", normalizeText(input.CC))
     .input("cantidad", normalizeNumber(input.Cantidad))
@@ -497,6 +443,7 @@ export async function createSistemaOtnRow(input: SistemaOtnInput) {
           EntregaFuente,
           FechaIngreso,
           Cliente,
+          Empresa,
           Solicitante,
           CC,
           Cantidad,
@@ -517,6 +464,7 @@ export async function createSistemaOtnRow(input: SistemaOtnInput) {
           @entregaFuente,
           NULLIF(@fechaIngreso, ''),
           @cliente,
+          @empresa,
           @solicitante,
           @cc,
           @cantidad,
@@ -537,56 +485,6 @@ export async function createSistemaOtnRow(input: SistemaOtnInput) {
 
 export async function updateSistemaOtnRow(id: number, input: SistemaOtnInput) {
   const pool = await getPool();
-  const includeEmpresa = await ensureEmpresaColumn(pool);
-
-  if (includeEmpresa) {
-    await pool
-      .request()
-      .input("otn", input.OTN.trim())
-      .input("estado", normalizeEstado(input.Estado))
-      .input("entregaFuente", normalizeEntregaFuente(input.EntregaFuente))
-      .input("fechaIngreso", normalizeDate(input.FechaIngreso))
-      .input("cliente", normalizeText(input.Cliente))
-      .input("empresa", normalizeEmpresa(input.Empresa))
-      .input("solicitante", normalizeText(input.Solicitante))
-      .input("cc", normalizeText(input.CC))
-      .input("cantidad", normalizeNumber(input.Cantidad))
-      .input("descripcion", normalizeText(input.Descripcion))
-      .input("referenciaCliente", normalizeText(input.ReferenciaCliente))
-      .input("cotizador", normalizeText(input.Cotizador))
-      .input("equipo", normalizeEquipo(input.Equipo))
-      .input("fechaPpto", normalizeDate(input.FechaPpto))
-      .input("valorPpto", normalizeNumber(input.ValorPpto))
-      .input("plazo", normalizeText(input.Plazo))
-      .input("observaciones", normalizeText(input.Observaciones))
-      .input("ruta", normalizeText(input.Ruta))
-      .query(`
-        UPDATE dbo.SistemaOtn
-        SET
-          OTN = @otn,
-          Estado = @estado,
-          EntregaFuente = @entregaFuente,
-          FechaIngreso = NULLIF(@fechaIngreso, ''),
-          Cliente = @cliente,
-          Empresa = @empresa,
-          Solicitante = @solicitante,
-          CC = @cc,
-          Cantidad = @cantidad,
-          Descripcion = @descripcion,
-          ReferenciaCliente = @referenciaCliente,
-          Cotizador = @cotizador,
-          Equipo = @equipo,
-          FechaPpto = NULLIF(@fechaPpto, ''),
-          ValorPpto = @valorPpto,
-          Plazo = @plazo,
-          Observaciones = @observaciones,
-          Ruta = @ruta,
-          ActualizadoEn = SYSUTCDATETIME()
-        WHERE Id = ${id}
-      `);
-
-    return;
-  }
 
   await pool
     .request()
@@ -595,6 +493,7 @@ export async function updateSistemaOtnRow(id: number, input: SistemaOtnInput) {
     .input("entregaFuente", normalizeEntregaFuente(input.EntregaFuente))
     .input("fechaIngreso", normalizeDate(input.FechaIngreso))
     .input("cliente", normalizeText(input.Cliente))
+    .input("empresa", normalizeEmpresa(input.Empresa))
     .input("solicitante", normalizeText(input.Solicitante))
     .input("cc", normalizeText(input.CC))
     .input("cantidad", normalizeNumber(input.Cantidad))
@@ -615,6 +514,7 @@ export async function updateSistemaOtnRow(id: number, input: SistemaOtnInput) {
         EntregaFuente = @entregaFuente,
         FechaIngreso = NULLIF(@fechaIngreso, ''),
         Cliente = @cliente,
+        Empresa = @empresa,
         Solicitante = @solicitante,
         CC = @cc,
         Cantidad = @cantidad,

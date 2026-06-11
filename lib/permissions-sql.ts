@@ -1,7 +1,9 @@
 import sql from "mssql";
 import { revalidateTag, unstable_cache } from "next/cache";
+import { cache } from "react";
 import { getAuthPool } from "@/lib/auth-sql";
 import { ACTIONS, MODULES, ROLES } from "@/lib/permissions-config";
+import { measureAsync } from "@/lib/server-performance";
 import {
   DEFAULT_CACHE_REVALIDATE_SECONDS,
   PLATFORM_CACHE_TAGS,
@@ -90,10 +92,22 @@ function mergePermissions(
   });
 }
 
+const listPermissionsRequestCached = cache(async (): Promise<PermissionRow[]> => {
+  return measureAsync(
+    "permissions.listPermissions",
+    async () => {
+      const defaults = buildDefaultPermissions();
+      const stored = await readStoredPermissionsCached();
+      return mergePermissions(defaults, stored);
+    },
+    {
+      slowMs: 75,
+    },
+  );
+});
+
 export async function listPermissions(): Promise<PermissionRow[]> {
-  const defaults = buildDefaultPermissions();
-  const stored = await readStoredPermissionsCached();
-  return mergePermissions(defaults, stored);
+  return listPermissionsRequestCached();
 }
 
 export function canAccess(

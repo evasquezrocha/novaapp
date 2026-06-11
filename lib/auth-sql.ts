@@ -1,6 +1,8 @@
 import sql from "mssql";
 import { createHash, randomBytes, pbkdf2, timingSafeEqual } from "node:crypto";
+import { cache } from "react";
 import { ensureDatabaseSchema } from "@/lib/db-schema";
+import { measureAsync } from "@/lib/server-performance";
 import { findUsuarioForLoginByUsuario } from "@/lib/usuarios-sql";
 
 export type SessionUser = {
@@ -45,6 +47,9 @@ declare global {
 
 function buildConfig(): AuthEnv {
   const port = Number(process.env.SQL_PORT ?? "1433");
+  const poolMax = Number(process.env.SQL_POOL_MAX ?? "20");
+  const poolMin = Number(process.env.SQL_POOL_MIN ?? "0");
+  const poolIdleTimeoutMillis = Number(process.env.SQL_POOL_IDLE_TIMEOUT_MS ?? "30000");
 
   if (!process.env.SQL_SERVER || !process.env.SQL_DATABASE) {
     throw new Error("Faltan variables de entorno para SQL_DATABASE.");
@@ -61,9 +66,11 @@ function buildConfig(): AuthEnv {
       trustServerCertificate: process.env.SQL_TRUST_CERT === "true",
     },
     pool: {
-      max: 10,
-      min: 0,
-      idleTimeoutMillis: 30000,
+      max: Number.isFinite(poolMax) ? poolMax : 20,
+      min: Number.isFinite(poolMin) ? poolMin : 0,
+      idleTimeoutMillis: Number.isFinite(poolIdleTimeoutMillis)
+        ? poolIdleTimeoutMillis
+        : 30000,
     },
   };
 }
@@ -185,7 +192,7 @@ export async function createSession(user: SessionUser) {
   }
 }
 
-export async function getSessionUserByToken(token: string) {
+async function getSessionUserByTokenUncached(token: string) {
   const query = async () => {
     const pool = await getAuthPool();
     const tokenHash = hashToken(token);
@@ -209,7 +216,9 @@ export async function getSessionUserByToken(token: string) {
   };
 
   try {
-    const result = await query();
+    const result = await measureAsync("auth.getSessionUserByToken", query, {
+      slowMs: 100,
+    });
     return result.recordset[0] ?? null;
   } catch (error) {
     if (!isMissingObjectError(error)) {
@@ -219,9 +228,19 @@ export async function getSessionUserByToken(token: string) {
     global.__authPool = undefined;
     await ensureDatabaseSchema();
 
-    const result = await query();
+    const result = await measureAsync("auth.getSessionUserByToken.retry", query, {
+      slowMs: 100,
+    });
     return result.recordset[0] ?? null;
   }
+}
+
+const getSessionUserByTokenCached = cache(async (token: string) => {
+  return getSessionUserByTokenUncached(token);
+});
+
+export async function getSessionUserByToken(token: string) {
+  return getSessionUserByTokenCached(token);
 }
 
 export async function revokeSession(token: string) {

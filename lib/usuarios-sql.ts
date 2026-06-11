@@ -51,6 +51,9 @@ declare global {
 
 function buildConfig(): UsuariosEnv {
   const port = Number(process.env.SQL_PORT ?? "1433");
+  const poolMax = Number(process.env.SQL_POOL_MAX ?? "20");
+  const poolMin = Number(process.env.SQL_POOL_MIN ?? "0");
+  const poolIdleTimeoutMillis = Number(process.env.SQL_POOL_IDLE_TIMEOUT_MS ?? "30000");
 
   if (!process.env.SQL_SERVER || !process.env.SQL_DATABASE) {
     throw new Error("Faltan variables de entorno para SQL_DATABASE.");
@@ -67,9 +70,11 @@ function buildConfig(): UsuariosEnv {
       trustServerCertificate: process.env.SQL_TRUST_CERT === "true",
     },
     pool: {
-      max: 10,
-      min: 0,
-      idleTimeoutMillis: 30000,
+      max: Number.isFinite(poolMax) ? poolMax : 20,
+      min: Number.isFinite(poolMin) ? poolMin : 0,
+      idleTimeoutMillis: Number.isFinite(poolIdleTimeoutMillis)
+        ? poolIdleTimeoutMillis
+        : 30000,
     },
   };
 }

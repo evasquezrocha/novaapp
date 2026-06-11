@@ -4,6 +4,7 @@ import {
   DEFAULT_CACHE_REVALIDATE_SECONDS,
   PLATFORM_CACHE_TAGS,
 } from "@/lib/platform-cache";
+import { measureAsync } from "@/lib/server-performance";
 
 export type CatalogRow = {
   Id: number;
@@ -122,44 +123,52 @@ function normalizeCatalogRow(row: CatalogRow): CatalogRow {
 
 const listActivosFijosCached = unstable_cache(
   async () => {
-    const pool = await getAuthPool();
-    const result = await pool.request().query<ActivoFijoRow>(`
-      SELECT
-        AF.Id,
-        AF.AF,
-        AF.OC,
-        AF.Descripcion,
-        AF.TipoActivoId,
-        T.Nombre AS TipoActivo,
-        AF.MarcaId,
-        M.Nombre AS Marca,
-        AF.Modelo,
-        AF.SeriePatente,
-        AF.NumeroFactura,
-        CONVERT(varchar(10), AF.FechaFactura, 23) AS FechaFactura,
-        AF.Valor,
-        AF.PropioLeasing,
-        AF.TotalmenteDepreciado,
-        CASE
-          WHEN AF.FechaFactura IS NULL THEN NULL
-          ELSE YEAR(AF.FechaFactura)
-        END AS Anio,
-        AF.Observacion,
-        AF.GrupoContableId,
-        G.Nombre AS GrupoContable,
-        CONVERT(varchar(19), AF.CreadoEn, 120) AS CreadoEn,
-        CONVERT(varchar(19), AF.ActualizadoEn, 120) AS ActualizadoEn
-      FROM dbo.ActivosFijos AF
-      LEFT JOIN dbo.ActivosFijosTipos T
-        ON T.Id = AF.TipoActivoId
-      LEFT JOIN dbo.ActivosFijosMarcas M
-        ON M.Id = AF.MarcaId
-      LEFT JOIN dbo.ActivosFijosGruposContables G
-        ON G.Id = AF.GrupoContableId
-      ORDER BY AF.AF ASC, AF.Id DESC
-    `);
+    return measureAsync(
+      "activos-fijos.list",
+      async () => {
+        const pool = await getAuthPool();
+        const result = await pool.request().query<ActivoFijoRow>(`
+          SELECT
+            AF.Id,
+            AF.AF,
+            AF.OC,
+            AF.Descripcion,
+            AF.TipoActivoId,
+            T.Nombre AS TipoActivo,
+            AF.MarcaId,
+            M.Nombre AS Marca,
+            AF.Modelo,
+            AF.SeriePatente,
+            AF.NumeroFactura,
+            CONVERT(varchar(10), AF.FechaFactura, 23) AS FechaFactura,
+            AF.Valor,
+            AF.PropioLeasing,
+            AF.TotalmenteDepreciado,
+            CASE
+              WHEN AF.FechaFactura IS NULL THEN NULL
+              ELSE YEAR(AF.FechaFactura)
+            END AS Anio,
+            AF.Observacion,
+            AF.GrupoContableId,
+            G.Nombre AS GrupoContable,
+            CONVERT(varchar(19), AF.CreadoEn, 120) AS CreadoEn,
+            CONVERT(varchar(19), AF.ActualizadoEn, 120) AS ActualizadoEn
+          FROM dbo.ActivosFijos AF
+          LEFT JOIN dbo.ActivosFijosTipos T
+            ON T.Id = AF.TipoActivoId
+          LEFT JOIN dbo.ActivosFijosMarcas M
+            ON M.Id = AF.MarcaId
+          LEFT JOIN dbo.ActivosFijosGruposContables G
+            ON G.Id = AF.GrupoContableId
+          ORDER BY AF.AF ASC, AF.Id DESC
+        `);
 
-    return result.recordset;
+        return result.recordset;
+      },
+      {
+        slowMs: 150,
+      },
+    );
   },
   ["platform", "activos-fijos", "list"],
   {
@@ -168,32 +177,47 @@ const listActivosFijosCached = unstable_cache(
   },
 );
 
-async function listActivosFijosCatalogosCached() {
-  const pool = await getAuthPool();
-  const [tipos, marcas, gruposContables] = await Promise.all([
-    pool.request().query<CatalogRow>(`
-      SELECT Id, Nombre
-      FROM dbo.ActivosFijosTipos
-      ORDER BY Nombre ASC, Id ASC
-    `),
-    pool.request().query<CatalogRow>(`
-      SELECT Id, Nombre
-      FROM dbo.ActivosFijosMarcas
-      ORDER BY Nombre ASC, Id ASC
-    `),
-    pool.request().query<CatalogRow>(`
-      SELECT Id, Nombre
-      FROM dbo.ActivosFijosGruposContables
-      ORDER BY Nombre ASC, Id ASC
-    `),
-  ]);
+const listActivosFijosCatalogosCached = unstable_cache(
+  async () => {
+    return measureAsync(
+      "activos-fijos.catalogos",
+      async () => {
+        const pool = await getAuthPool();
+        const [tipos, marcas, gruposContables] = await Promise.all([
+          pool.request().query<CatalogRow>(`
+            SELECT Id, Nombre
+            FROM dbo.ActivosFijosTipos
+            ORDER BY Nombre ASC, Id ASC
+          `),
+          pool.request().query<CatalogRow>(`
+            SELECT Id, Nombre
+            FROM dbo.ActivosFijosMarcas
+            ORDER BY Nombre ASC, Id ASC
+          `),
+          pool.request().query<CatalogRow>(`
+            SELECT Id, Nombre
+            FROM dbo.ActivosFijosGruposContables
+            ORDER BY Nombre ASC, Id ASC
+          `),
+        ]);
 
-  return {
-    tipos: tipos.recordset.map(normalizeCatalogRow),
-    marcas: marcas.recordset.map(normalizeCatalogRow),
-    gruposContables: gruposContables.recordset.map(normalizeCatalogRow),
-  };
-}
+        return {
+          tipos: tipos.recordset.map(normalizeCatalogRow),
+          marcas: marcas.recordset.map(normalizeCatalogRow),
+          gruposContables: gruposContables.recordset.map(normalizeCatalogRow),
+        };
+      },
+      {
+        slowMs: 100,
+      },
+    );
+  },
+  ["platform", "activos-fijos", "catalogos"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.activosFijos],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
 
 export async function listActivosFijos(): Promise<ActivoFijoRow[]> {
   return listActivosFijosCached();

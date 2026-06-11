@@ -26,4 +26,28 @@ BEGIN
 
   CREATE UNIQUE INDEX UX_SistemaOtn_OTN
     ON dbo.SistemaOtn(OTN);
+
+  CREATE INDEX IX_SistemaOtn_Id_DESC
+    ON dbo.SistemaOtn(Id DESC)
+    INCLUDE (
+      OTN,
+      Estado,
+      FechaIngreso,
+      Cliente,
+      Empresa,
+      EntregaFuente,
+      Solicitante,
+      CC,
+      Cantidad,
+      Descripcion,
+      ReferenciaCliente,
+      Cotizador,
+      Equipo,
+      FechaPpto,
+      ValorPpto,
+      Plazo,
+      Ruta,
+      CreadoEn,
+      ActualizadoEn
+    );
 END;

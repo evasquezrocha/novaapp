@@ -9,6 +9,7 @@ import {
   type SapCompanyConfig,
   type SapCompanyKey,
 } from "@/lib/company-config";
+import { measureAsync } from "@/lib/server-performance";
 
 export type StockActualRow = {
   Codigo: string;
@@ -328,6 +329,11 @@ export const getActiveSapCompany = cache(async (): Promise<SapCompanyConfig> => 
 function buildConfig(company: SapCompanyConfig): SqlEnv {
   const port = Number(process.env.SQL_PORT ?? "1433");
   const database = process.env[company.databaseEnvKey];
+  const poolMax = Number(process.env.SAP_SQL_POOL_MAX ?? process.env.SQL_POOL_MAX ?? "20");
+  const poolMin = Number(process.env.SAP_SQL_POOL_MIN ?? process.env.SQL_POOL_MIN ?? "0");
+  const poolIdleTimeoutMillis = Number(
+    process.env.SAP_SQL_POOL_IDLE_TIMEOUT_MS ?? process.env.SQL_POOL_IDLE_TIMEOUT_MS ?? "30000",
+  );
 
   if (!process.env.SQL_SERVER || !database) {
     throw new Error(`Faltan variables de entorno para ${company.databaseEnvKey}.`);
@@ -344,9 +350,11 @@ function buildConfig(company: SapCompanyConfig): SqlEnv {
       trustServerCertificate: process.env.SQL_TRUST_CERT === "true",
     },
     pool: {
-      max: 10,
-      min: 0,
-      idleTimeoutMillis: 30000,
+      max: Number.isFinite(poolMax) ? poolMax : 20,
+      min: Number.isFinite(poolMin) ? poolMin : 0,
+      idleTimeoutMillis: Number.isFinite(poolIdleTimeoutMillis)
+        ? poolIdleTimeoutMillis
+        : 30000,
     },
   };
 }
@@ -383,31 +391,39 @@ export function getSapCompanyKeyForOtnEmpresa(empresa: string | null | undefined
 
 export async function getStockActualRows(): Promise<StockActualRow[]> {
   try {
-    const pool = await getSapPool();
+    return measureAsync(
+      "sap.stock-actual",
+      async () => {
+        const pool = await getSapPool();
 
-    const result = await pool
-      .request()
-      .query<StockActualRow>(`
-        SELECT
-          T0.ItemCode AS Codigo,
-          T0.ItemName AS Descripcion,
-          COALESCE(T0.InvntryUom, '') AS Unidad,
-          T2.WhsName AS Bodega,
-          CAST(COALESCE(T1.OnHand, 0) AS decimal(18, 2)) AS [Stock Actual],
-          CAST(COALESCE(T1.OnOrder, 0) AS decimal(18, 2)) AS Pedido,
-          CAST(COALESCE(T1.MinStock, 0) AS decimal(18, 2)) AS [Stock Minimo]
-        FROM dbo.OITM T0
-        INNER JOIN dbo.OITW T1
-          ON T1.ItemCode = T0.ItemCode
-        INNER JOIN dbo.OWHS T2
-          ON T2.WhsCode = T1.WhsCode
-        WHERE T0.validFor = 'Y'
-          AND T0.frozenFor = 'N'
-          AND T0.InvntItem = 'Y'
-        ORDER BY T0.ItemCode, T2.WhsName
-      `);
+        const result = await pool
+          .request()
+          .query<StockActualRow>(`
+            SELECT
+              T0.ItemCode AS Codigo,
+              T0.ItemName AS Descripcion,
+              COALESCE(T0.InvntryUom, '') AS Unidad,
+              T2.WhsName AS Bodega,
+              CAST(COALESCE(T1.OnHand, 0) AS decimal(18, 2)) AS [Stock Actual],
+              CAST(COALESCE(T1.OnOrder, 0) AS decimal(18, 2)) AS Pedido,
+              CAST(COALESCE(T1.MinStock, 0) AS decimal(18, 2)) AS [Stock Minimo]
+            FROM dbo.OITM T0
+            INNER JOIN dbo.OITW T1
+              ON T1.ItemCode = T0.ItemCode
+            INNER JOIN dbo.OWHS T2
+              ON T2.WhsCode = T1.WhsCode
+            WHERE T0.validFor = 'Y'
+              AND T0.frozenFor = 'N'
+              AND T0.InvntItem = 'Y'
+            ORDER BY T0.ItemCode, T2.WhsName
+          `);
 
-    return result.recordset;
+        return result.recordset;
+      },
+      {
+        slowMs: 250,
+      },
+    );
   } catch (error) {
     if (isMissingObjectError(error)) {
       throw new Error(
@@ -632,115 +648,133 @@ export async function getMaterialesUtilizadosByOtn(
   otn: string,
   companyKey?: SapCompanyKey | null,
 ): Promise<MaterialesUtilizadosResult> {
-  const pool = companyKey ? await getSapPoolForCompany(companyKey) : await getSapPool();
+  return measureAsync(
+    "sap.materiales-utilizados-otn",
+    async () => {
+      const pool = companyKey ? await getSapPoolForCompany(companyKey) : await getSapPool();
 
-  const [totalResult, detailResult] = await Promise.all([
-    pool.request().input("otn", otn).query<{ MATUTI: number }>(`
-      SELECT
-        CAST(ISNULL(SUM(T1.[StockPrice] * T1.[Quantity]), 0) AS decimal(18, 2)) AS [MATUTI]
-      FROM OIGE T0
-      INNER JOIN IGE1 T1
-        ON T0.DocEntry = T1.DocEntry
-      WHERE T1.[Project] = @otn
-    `),
-    pool.request().input("otn", otn).query<MaterialesUtilizadosRow>(`
-      SELECT
-        T0.DocNum AS Documento,
-        CONVERT(varchar(10), T0.DocDate, 120) AS Fecha,
-        COALESCE(T1.ItemCode, '') AS Codigo,
-        COALESCE(T1.Dscription, '') AS Descripcion,
-        CAST(COALESCE(T1.Quantity, 0) AS decimal(18, 2)) AS Cantidad,
-        CAST(COALESCE(T1.StockPrice, 0) AS decimal(18, 2)) AS PrecioUnitario,
-        CAST(COALESCE(T1.StockPrice * T1.Quantity, 0) AS decimal(18, 2)) AS TotalLinea
-      FROM OIGE T0
-      INNER JOIN IGE1 T1
-        ON T0.DocEntry = T1.DocEntry
-      WHERE T1.[Project] = @otn
-      ORDER BY T0.DocDate DESC, T0.DocNum DESC, T1.LineNum ASC
-    `),
-  ]);
+      const [totalResult, detailResult] = await Promise.all([
+        pool.request().input("otn", otn).query<{ MATUTI: number }>(`
+          SELECT
+            CAST(ISNULL(SUM(T1.[StockPrice] * T1.[Quantity]), 0) AS decimal(18, 2)) AS [MATUTI]
+          FROM OIGE T0
+          INNER JOIN IGE1 T1
+            ON T0.DocEntry = T1.DocEntry
+          WHERE T1.[Project] = @otn
+        `),
+        pool.request().input("otn", otn).query<MaterialesUtilizadosRow>(`
+          SELECT
+            T0.DocNum AS Documento,
+            CONVERT(varchar(10), T0.DocDate, 120) AS Fecha,
+            COALESCE(T1.ItemCode, '') AS Codigo,
+            COALESCE(T1.Dscription, '') AS Descripcion,
+            CAST(COALESCE(T1.Quantity, 0) AS decimal(18, 2)) AS Cantidad,
+            CAST(COALESCE(T1.StockPrice, 0) AS decimal(18, 2)) AS PrecioUnitario,
+            CAST(COALESCE(T1.StockPrice * T1.Quantity, 0) AS decimal(18, 2)) AS TotalLinea
+          FROM OIGE T0
+          INNER JOIN IGE1 T1
+            ON T0.DocEntry = T1.DocEntry
+          WHERE T1.[Project] = @otn
+          ORDER BY T0.DocDate DESC, T0.DocNum DESC, T1.LineNum ASC
+        `),
+      ]);
 
-  return {
-    total: totalResult.recordset[0]?.MATUTI ?? 0,
-    rows: detailResult.recordset,
-  };
+      return {
+        total: totalResult.recordset[0]?.MATUTI ?? 0,
+        rows: detailResult.recordset,
+      };
+    },
+    {
+      slowMs: 250,
+      details: `otn=${otn}${companyKey ? ` company=${companyKey}` : ""}`,
+    },
+  );
 }
 
 export async function getSalesInvoicesByOtn(
   otn: string,
   companyKey?: SapCompanyKey | null,
 ): Promise<SalesInvoiceResult> {
-  const pool = companyKey ? await getSapPoolForCompany(companyKey) : await getSapPool();
+  return measureAsync(
+    "sap.sales-invoices-otn",
+    async () => {
+      const pool = companyKey ? await getSapPoolForCompany(companyKey) : await getSapPool();
 
-  const result = await pool.request().input("otn", otn).query<
-    SalesInvoiceRow & SalesInvoiceLineRow
-  >(`
-    SELECT
-      T0.DocEntry AS DocEntry,
-      T0.DocNum AS NumeroFV,
-      T0.FolioNum AS FolioNum,
-      CONVERT(varchar(10), T0.DocDate, 120) AS Fecha,
-      CONVERT(varchar(10), T0.DocDueDate, 120) AS FechaVencimiento,
-      CAST(COALESCE(T0.DocTotal, 0) - COALESCE(T0.VatSum, 0) AS decimal(18, 2)) AS Total,
-      CAST(
-        CASE
-          WHEN COALESCE(T0.DocTotal, 0) = 0 THEN 0
-          ELSE (COALESCE(T0.DocTotal, 0) - COALESCE(T0.VatSum, 0))
-            * (
-              CASE
-                WHEN COALESCE(T0.DocTotal, 0) - COALESCE(T0.PaidToDate, 0) < 0 THEN 0
-                ELSE COALESCE(T0.DocTotal, 0) - COALESCE(T0.PaidToDate, 0)
-              END
-            )
-            / NULLIF(COALESCE(T0.DocTotal, 0), 0)
-        END
-        AS decimal(18, 2)
-      ) AS TotalPendiente,
-      T1.LineNum AS LineNum,
-      COALESCE(T1.Dscription, '') AS DescripcionLinea,
-      CAST(COALESCE(T1.Quantity, 0) AS decimal(18, 2)) AS Cantidad,
-      CAST(COALESCE(T1.Price, 0) AS decimal(18, 2)) AS PrecioUnitario,
-      CAST(COALESCE(T1.LineTotal, 0) AS decimal(18, 2)) AS ValorTotal
-    FROM OINV T0
-    INNER JOIN INV1 T1
-      ON T0.DocEntry = T1.DocEntry
-    WHERE T0.CANCELED = 'N'
-      AND T1.[Project] = @otn
-    ORDER BY T0.DocDate DESC, T0.DocNum DESC, T1.LineNum ASC
-  `);
+      const result = await pool.request().input("otn", otn).query<
+        SalesInvoiceRow & SalesInvoiceLineRow
+      >(`
+        SELECT
+          T0.DocEntry AS DocEntry,
+          T0.DocNum AS NumeroFV,
+          T0.FolioNum AS FolioNum,
+          CONVERT(varchar(10), T0.DocDate, 120) AS Fecha,
+          CONVERT(varchar(10), T0.DocDueDate, 120) AS FechaVencimiento,
+          CAST(COALESCE(T0.DocTotal, 0) - COALESCE(T0.VatSum, 0) AS decimal(18, 2)) AS Total,
+          CAST(
+            CASE
+              WHEN COALESCE(T0.DocTotal, 0) = 0 THEN 0
+              ELSE (COALESCE(T0.DocTotal, 0) - COALESCE(T0.VatSum, 0))
+                * (
+                  CASE
+                    WHEN COALESCE(T0.DocTotal, 0) - COALESCE(T0.PaidToDate, 0) < 0 THEN 0
+                    ELSE COALESCE(T0.DocTotal, 0) - COALESCE(T0.PaidToDate, 0)
+                  END
+                )
+                / NULLIF(COALESCE(T0.DocTotal, 0), 0)
+            END
+            AS decimal(18, 2)
+          ) AS TotalPendiente,
+          T1.LineNum AS LineNum,
+          COALESCE(T1.Dscription, '') AS DescripcionLinea,
+          CAST(COALESCE(T1.Quantity, 0) AS decimal(18, 2)) AS Cantidad,
+          CAST(COALESCE(T1.Price, 0) AS decimal(18, 2)) AS PrecioUnitario,
+          CAST(COALESCE(T1.LineTotal, 0) AS decimal(18, 2)) AS ValorTotal
+        FROM OINV T0
+        INNER JOIN INV1 T1
+          ON T0.DocEntry = T1.DocEntry
+        WHERE T0.CANCELED = 'N'
+          AND T1.[Project] = @otn
+        ORDER BY T0.DocDate DESC, T0.DocNum DESC, T1.LineNum ASC
+      `);
 
-  const grouped = new Map<number, SalesInvoiceRow>();
+      const grouped = new Map<number, SalesInvoiceRow>();
 
-  for (const row of result.recordset) {
-    const existing = grouped.get(row.DocEntry);
-    const line: SalesInvoiceLineRow = {
-      LineNum: row.LineNum,
-      DescripcionLinea: row.DescripcionLinea,
-      Cantidad: row.Cantidad,
-      PrecioUnitario: row.PrecioUnitario,
-      ValorTotal: row.ValorTotal,
-    };
+      for (const row of result.recordset) {
+        const existing = grouped.get(row.DocEntry);
+        const line: SalesInvoiceLineRow = {
+          LineNum: row.LineNum,
+          DescripcionLinea: row.DescripcionLinea,
+          Cantidad: row.Cantidad,
+          PrecioUnitario: row.PrecioUnitario,
+          ValorTotal: row.ValorTotal,
+        };
 
-    if (!existing) {
-      grouped.set(row.DocEntry, {
-        DocEntry: row.DocEntry,
-        NumeroFV: row.NumeroFV,
-        FolioNum: row.FolioNum,
-        Fecha: row.Fecha,
-        FechaVencimiento: row.FechaVencimiento,
-        Total: row.Total,
-        TotalPendiente: row.TotalPendiente,
-        lineas: [line],
-      });
-      continue;
-    }
+        if (!existing) {
+          grouped.set(row.DocEntry, {
+            DocEntry: row.DocEntry,
+            NumeroFV: row.NumeroFV,
+            FolioNum: row.FolioNum,
+            Fecha: row.Fecha,
+            FechaVencimiento: row.FechaVencimiento,
+            Total: row.Total,
+            TotalPendiente: row.TotalPendiente,
+            lineas: [line],
+          });
+          continue;
+        }
 
-    existing.lineas.push(line);
-  }
+        existing.lineas.push(line);
+      }
 
-  return {
-    rows: Array.from(grouped.values()),
-  };
+      return {
+        rows: Array.from(grouped.values()),
+      };
+    },
+    {
+      slowMs: 250,
+      details: `otn=${otn}${companyKey ? ` company=${companyKey}` : ""}`,
+    },
+  );
 }
 
 export async function getMaterialesUtilizadosByCc(

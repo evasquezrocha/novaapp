@@ -5,6 +5,7 @@ import {
   DEFAULT_CACHE_REVALIDATE_SECONDS,
   PLATFORM_CACHE_TAGS,
 } from "@/lib/platform-cache";
+import { measureAsync } from "@/lib/server-performance";
 
 export type SistemaOtnAprobacionRow = {
   Id: number;
@@ -84,26 +85,35 @@ const getSistemaOtnAprobacionesRowsByOtnCached = unstable_cache(
       return [];
     }
 
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("otn", normalizedOtn)
-      .query<SistemaOtnAprobacionRow>(`
-        SELECT
-          Id,
-          OTN,
-          CONVERT(varchar(10), FechaAprobacion, 23) AS FechaAprobacion,
-          ValorAprobado,
-          OC,
-          ReferenciaCliente,
-          CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
-          CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
-        FROM dbo.SistemaOtnAprobaciones
-        WHERE OTN = @otn
-        ORDER BY Id DESC
-      `);
+    return measureAsync(
+      "sistema-otn.aprobaciones.by-otn",
+      async () => {
+        const pool = await getPool();
+        const result = await pool
+          .request()
+          .input("otn", normalizedOtn)
+          .query<SistemaOtnAprobacionRow>(`
+            SELECT
+              Id,
+              OTN,
+              CONVERT(varchar(10), FechaAprobacion, 23) AS FechaAprobacion,
+              ValorAprobado,
+              OC,
+              ReferenciaCliente,
+              CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
+              CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
+            FROM dbo.SistemaOtnAprobaciones
+            WHERE OTN = @otn
+            ORDER BY Id DESC
+          `);
 
-    return result.recordset;
+        return result.recordset;
+      },
+      {
+        slowMs: 100,
+        details: `otn=${normalizedOtn}`,
+      },
+    );
   },
   ["platform", "sistema-otn", "aprobaciones", "otn"],
   {

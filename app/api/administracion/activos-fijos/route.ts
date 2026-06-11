@@ -7,34 +7,47 @@ import {
   listActivosFijos,
 } from "@/lib/activos-fijos-sql";
 import { canAccess, listPermissions } from "@/lib/permissions-sql";
+import { createServerTimingContext } from "@/lib/server-performance";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const timing = createServerTimingContext("GET /api/administracion/activos-fijos");
   const cookieStore = await cookies();
   const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
-  const session = token ? await getSessionUserByToken(token) : null;
+  const session = token ? await timing.measure("session", () => getSessionUserByToken(token)) : null;
   if (!session) {
-    return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+    const response = NextResponse.json({ error: "No autorizado." }, { status: 401 });
+    timing.finalize();
+    timing.apply(response);
+    return response;
   }
 
-  const permissions = await listPermissions();
+  const permissions = await timing.measure("permissions", () => listPermissions());
   if (!canAccess(permissions, session.Rol, "Administración")) {
-    return NextResponse.json({ error: "No autorizado." }, { status: 403 });
+    const response = NextResponse.json({ error: "No autorizado." }, { status: 403 });
+    timing.finalize();
+    timing.apply(response);
+    return response;
   }
 
   try {
-    const [activos, catalogos] = await Promise.all([
-      listActivosFijos(),
-      listActivosFijosCatalogos(),
-    ]);
+    const [activos, catalogos] = await timing.measure("data", () =>
+      Promise.all([listActivosFijos(), listActivosFijosCatalogos()]),
+    );
 
-    return NextResponse.json({ activos, catalogos });
+    const response = NextResponse.json({ activos, catalogos });
+    timing.finalize();
+    timing.apply(response);
+    return response;
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "No fue posible listar los activos fijos.";
 
-    return NextResponse.json({ error: message }, { status: 500 });
+    const response = NextResponse.json({ error: message }, { status: 500 });
+    timing.finalize();
+    timing.apply(response);
+    return response;
   }
 }
 
