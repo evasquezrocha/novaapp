@@ -9,26 +9,26 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const timing = createServerTimingContext("GET /api/bodega/stock-actual");
-  const cookieStore = await cookies();
-  const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
-  const session = token ? await timing.measure("session", () => getSessionUserByToken(token)) : null;
-
-  if (!session) {
-    const response = NextResponse.json({ error: "No autorizado." }, { status: 401 });
-    timing.finalize();
-    timing.apply(response);
-    return response;
-  }
-
-  const permissions = await timing.measure("permissions", () => listPermissions());
-  if (!canAccess(permissions, session.Rol, "Bodega")) {
-    const response = NextResponse.json({ error: "No autorizado." }, { status: 403 });
-    timing.finalize();
-    timing.apply(response);
-    return response;
-  }
-
   try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
+    const session = token ? await timing.measure("session", () => getSessionUserByToken(token)) : null;
+
+    if (!session) {
+      const response = NextResponse.json({ error: "No autorizado." }, { status: 401 });
+      timing.finalize();
+      timing.apply(response);
+      return response;
+    }
+
+    const permissions = await timing.measure("permissions", () => listPermissions());
+    if (!canAccess(permissions, session.Rol, "Bodega")) {
+      const response = NextResponse.json({ error: "No autorizado." }, { status: 403 });
+      timing.finalize();
+      timing.apply(response);
+      return response;
+    }
+
     const rows = await timing.measure("data", () => getStockActualRows());
     const response = NextResponse.json({ rows });
     timing.finalize();
@@ -39,7 +39,6 @@ export async function GET() {
       error instanceof Error
         ? error.message
         : "No fue posible consultar el stock actual.";
-
     const response = NextResponse.json({ error: message }, { status: 500 });
     timing.finalize();
     timing.apply(response);

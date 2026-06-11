@@ -43,6 +43,14 @@ export function StockActualClient() {
           signal: controller.signal,
         });
 
+        const contentType = response.headers.get("content-type") ?? "";
+        if (!contentType.includes("application/json")) {
+          const finalUrl = new URL(response.url);
+          throw new Error(
+            `El servidor respondió HTML en lugar de JSON (${response.status} ${finalUrl.pathname}).`,
+          );
+        }
+
         const payload = (await response.json()) as {
           rows?: StockActualRow[];
           error?: string;

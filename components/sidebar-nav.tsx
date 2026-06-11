@@ -27,6 +27,7 @@ export function SidebarNav({
   canSeeBodega,
   canSeeUsuarios,
   canSeeLog,
+  canSeeMonitoreo,
   canSeePermisos,
   canSeeAdministracion,
 }: {
@@ -35,16 +36,18 @@ export function SidebarNav({
   canSeeBodega: boolean;
   canSeeUsuarios: boolean;
   canSeeLog: boolean;
+  canSeeMonitoreo: boolean;
   canSeePermisos: boolean;
   canSeeAdministracion: boolean;
 }) {
   const pathname = usePathname();
   const isUsuariosActive = pathname.startsWith("/usuarios");
   const isLogActive = pathname.startsWith("/configuracion/log");
+  const isMonitoreoActive = pathname.startsWith("/configuracion/monitoreo");
   const isPermisosActive = pathname.startsWith("/configuracion/permisos");
   const isActivosFijosActive = pathname.startsWith("/administracion/activos-fijos");
 
-  const showConfiguracion = canSeeUsuarios || canSeeLog || canSeePermisos;
+  const showConfiguracion = canSeeUsuarios || canSeeLog || canSeeMonitoreo || canSeePermisos;
 
   return (
     <nav aria-label="Menú principal" className="space-y-2">
@@ -168,6 +171,18 @@ export function SidebarNav({
               <span>Log</span>
               <span aria-hidden className="text-white/90">
                 →
+              </span>
+            </Link>
+          ) : null}
+
+          {canSeeMonitoreo ? (
+            <Link
+              href="/configuracion/monitoreo"
+              className={`mt-2 ${navLinkClass(isMonitoreoActive)}`}
+            >
+              <span>Monitoreo</span>
+              <span aria-hidden className="text-white/90">
+                â†’
               </span>
             </Link>
           ) : null}

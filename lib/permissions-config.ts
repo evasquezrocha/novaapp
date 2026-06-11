@@ -5,6 +5,7 @@ export const MODULES = [
   "Bodega",
   "Usuarios",
   "Log",
+  "Monitoreo",
   "Permisos",
   "Administración",
 ] as const;

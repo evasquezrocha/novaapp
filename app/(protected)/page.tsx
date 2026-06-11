@@ -20,6 +20,7 @@ export default async function Home() {
     { href: "/bodega/stock-actual", label: "Bodega", module: "Bodega" },
     { href: "/usuarios", label: "Usuarios", module: "Usuarios" },
     { href: "/configuracion/log", label: "Log", module: "Log" },
+    { href: "/configuracion/monitoreo", label: "Monitoreo", module: "Monitoreo" },
     { href: "/configuracion/permisos", label: "Permisos", module: "Permisos" },
   ].filter((item) => canAccess(permissions, session.Rol, item.module));
 

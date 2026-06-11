@@ -1,6 +1,7 @@
 import sql from "mssql";
 import { cache } from "react";
 import { cookies } from "next/headers";
+import { unstable_cache } from "next/cache";
 import {
   COMPANY_COOKIE_NAME,
   SAP_COMPANIES,
@@ -9,6 +10,10 @@ import {
   type SapCompanyConfig,
   type SapCompanyKey,
 } from "@/lib/company-config";
+import {
+  DEFAULT_CACHE_REVALIDATE_SECONDS,
+  PLATFORM_CACHE_TAGS,
+} from "@/lib/platform-cache";
 import { measureAsync } from "@/lib/server-performance";
 
 export type StockActualRow = {
@@ -389,41 +394,64 @@ export function getSapCompanyKeyForOtnEmpresa(empresa: string | null | undefined
   return resolveSapCompanyKeyFromEmpresa(empresa);
 }
 
+const getStockActualRowsCached = unstable_cache(
+  async (companyKey: SapCompanyKey): Promise<StockActualRow[]> => {
+    try {
+      return measureAsync(
+        "sap.stock-actual",
+        async () => {
+          const pool = await getSapPoolForCompany(companyKey);
+
+          const result = await pool
+            .request()
+            .query<StockActualRow>(`
+              SELECT
+                T0.ItemCode AS Codigo,
+                T0.ItemName AS Descripcion,
+                COALESCE(T0.InvntryUom, '') AS Unidad,
+                T2.WhsName AS Bodega,
+                CAST(COALESCE(T1.OnHand, 0) AS decimal(18, 2)) AS [Stock Actual],
+                CAST(COALESCE(T1.OnOrder, 0) AS decimal(18, 2)) AS Pedido,
+                CAST(COALESCE(T1.MinStock, 0) AS decimal(18, 2)) AS [Stock Minimo]
+              FROM dbo.OITM T0
+              INNER JOIN dbo.OITW T1
+                ON T1.ItemCode = T0.ItemCode
+              INNER JOIN dbo.OWHS T2
+                ON T2.WhsCode = T1.WhsCode
+              WHERE T0.validFor = 'Y'
+                AND T0.frozenFor = 'N'
+                AND T0.InvntItem = 'Y'
+              ORDER BY T0.ItemCode, T2.WhsName
+            `);
+
+          return result.recordset;
+        },
+        {
+          slowMs: 250,
+          details: `company=${companyKey}`,
+        },
+      );
+    } catch (error) {
+      if (isMissingObjectError(error)) {
+        throw new Error(
+          `La tabla OITM no existe en la base SAP configurada para ${SAP_COMPANIES[companyKey].label}. Revisa el esquema o la base asignada.`,
+        );
+      }
+
+      throw error;
+    }
+  },
+  ["platform", "bodega", "stock-actual"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.bodega],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
+
 export async function getStockActualRows(): Promise<StockActualRow[]> {
   try {
-    return measureAsync(
-      "sap.stock-actual",
-      async () => {
-        const pool = await getSapPool();
-
-        const result = await pool
-          .request()
-          .query<StockActualRow>(`
-            SELECT
-              T0.ItemCode AS Codigo,
-              T0.ItemName AS Descripcion,
-              COALESCE(T0.InvntryUom, '') AS Unidad,
-              T2.WhsName AS Bodega,
-              CAST(COALESCE(T1.OnHand, 0) AS decimal(18, 2)) AS [Stock Actual],
-              CAST(COALESCE(T1.OnOrder, 0) AS decimal(18, 2)) AS Pedido,
-              CAST(COALESCE(T1.MinStock, 0) AS decimal(18, 2)) AS [Stock Minimo]
-            FROM dbo.OITM T0
-            INNER JOIN dbo.OITW T1
-              ON T1.ItemCode = T0.ItemCode
-            INNER JOIN dbo.OWHS T2
-              ON T2.WhsCode = T1.WhsCode
-            WHERE T0.validFor = 'Y'
-              AND T0.frozenFor = 'N'
-              AND T0.InvntItem = 'Y'
-            ORDER BY T0.ItemCode, T2.WhsName
-          `);
-
-        return result.recordset;
-      },
-      {
-        slowMs: 250,
-      },
-    );
+    const company = await getActiveSapCompany();
+    return getStockActualRowsCached(company.key);
   } catch (error) {
     if (isMissingObjectError(error)) {
       throw new Error(
