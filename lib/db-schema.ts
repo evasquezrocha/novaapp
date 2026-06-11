@@ -222,6 +222,45 @@ BEGIN
 END;
 `;
 
+const ENSURE_ACTIVOS_FIJOS_COLUMNS_SQL = `
+IF OBJECT_ID('dbo.ActivosFijos', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.ActivosFijos', 'NumeroFactura') IS NULL
+BEGIN
+  ALTER TABLE dbo.ActivosFijos
+    ADD NumeroFactura NVARCHAR(50) NULL;
+END;
+
+IF OBJECT_ID('dbo.ActivosFijos', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.ActivosFijos', 'FechaFactura') IS NULL
+BEGIN
+  ALTER TABLE dbo.ActivosFijos
+    ADD FechaFactura DATE NULL;
+END;
+
+IF OBJECT_ID('dbo.ActivosFijos', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.ActivosFijos', 'Valor') IS NULL
+BEGIN
+  ALTER TABLE dbo.ActivosFijos
+    ADD Valor DECIMAL(18,2) NULL;
+END;
+
+IF OBJECT_ID('dbo.ActivosFijos', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.ActivosFijos', 'PropioLeasing') IS NULL
+BEGIN
+  ALTER TABLE dbo.ActivosFijos
+    ADD PropioLeasing NVARCHAR(20) NULL;
+END;
+
+IF OBJECT_ID('dbo.ActivosFijos', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.ActivosFijos', 'TotalmenteDepreciado') IS NULL
+BEGIN
+  ALTER TABLE dbo.ActivosFijos
+    ADD TotalmenteDepreciado BIT NOT NULL
+      CONSTRAINT DF_ActivosFijos_TotalmenteDepreciado DEFAULT (0)
+      WITH VALUES;
+END;
+`;
+
 async function ensureSistemaOtnSchema(pool: sql.ConnectionPool) {
   const hasSistemaOtn = await tableExists(pool, "dbo.SistemaOtn");
 
@@ -256,6 +295,19 @@ async function ensureSistemaOtnEntregasManualesSchema(pool: sql.ConnectionPool) 
   }
 
   for (const batch of splitSqlBatches(ENSURE_SISTEMA_OTN_ENTREGAS_MANUALES_INDEX_SQL)) {
+    await pool.request().batch(batch);
+  }
+}
+
+async function ensureActivosFijosSchema(pool: sql.ConnectionPool) {
+  const hasActivosFijos = await tableExists(pool, "dbo.ActivosFijos");
+
+  if (!hasActivosFijos) {
+    await runSqlFile(pool, "sql/create-activos-fijos-table.sql");
+    return;
+  }
+
+  for (const batch of splitSqlBatches(ENSURE_ACTIVOS_FIJOS_COLUMNS_SQL)) {
     await pool.request().batch(batch);
   }
 }
@@ -324,22 +376,7 @@ export async function ensureDatabaseSchema() {
       const pool = await new sql.ConnectionPool(buildConfig()).connect();
 
       try {
-        const hasActivosFijosTypes = await tableExists(pool, "dbo.ActivosFijosTipos");
-        const hasActivosFijos = await tableExists(pool, "dbo.ActivosFijos");
-        const hasActivosFijosMarcas = await tableExists(pool, "dbo.ActivosFijosMarcas");
-        const hasActivosFijosGrupos = await tableExists(
-          pool,
-          "dbo.ActivosFijosGruposContables",
-        );
-
-        if (
-          !hasActivosFijosTypes ||
-          !hasActivosFijos ||
-          !hasActivosFijosMarcas ||
-          !hasActivosFijosGrupos
-        ) {
-          await runSqlFile(pool, "sql/create-activos-fijos-table.sql");
-        }
+        await ensureActivosFijosSchema(pool);
       } finally {
         await pool.close();
       }

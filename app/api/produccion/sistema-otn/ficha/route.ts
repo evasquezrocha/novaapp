@@ -7,7 +7,6 @@ import { getSistemaOtnAprobacionesRowsByOtn } from "@/lib/sistema-otn-aprobacion
 import { listSistemaOtnEntregasManualesRowsByOtn } from "@/lib/sistema-otn-entregas-manuales-sql";
 import { resolveSapCompanyKeyFromEmpresa } from "@/lib/company-config";
 import {
-  getMaterialesUtilizadosByOtn,
   getSalesCreditNotesByOtn,
   getSalesInvoicesByOtn,
 } from "@/lib/sap-stock";
@@ -42,21 +41,18 @@ export async function GET(request: Request) {
     const info = await getSistemaOtnRowByOtn(otn);
     const companyKey = resolveSapCompanyKeyFromEmpresa(info?.Empresa);
 
-    const [aprobaciones, materialesUtilizados, entregasManuales, facturas, notasCredito] =
-      await Promise.all([
-        getSistemaOtnAprobacionesRowsByOtn(otn),
-        getMaterialesUtilizadosByOtn(otn, companyKey),
-        listSistemaOtnEntregasManualesRowsByOtn(otn),
-        getSalesInvoicesByOtn(otn, companyKey),
-        getSalesCreditNotesByOtn(otn, companyKey),
-      ]);
+    const [aprobaciones, entregasManuales, facturas, notasCredito] = await Promise.all([
+      getSistemaOtnAprobacionesRowsByOtn(otn),
+      listSistemaOtnEntregasManualesRowsByOtn(otn),
+      getSalesInvoicesByOtn(otn, companyKey),
+      getSalesCreditNotesByOtn(otn, companyKey),
+    ]);
 
     return NextResponse.json({
       otn,
       info,
       aprobaciones,
       entregas: {
-        materialesUtilizados,
         manuales: entregasManuales,
       },
       facturas,

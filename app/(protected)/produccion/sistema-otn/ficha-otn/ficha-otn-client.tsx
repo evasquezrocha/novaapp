@@ -4,7 +4,6 @@ import { Fragment, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { formatDateDdMmYyyy } from "@/lib/date-format";
 import type {
-  MaterialesUtilizadosResult,
   SalesCreditNoteResult,
   SalesInvoiceResult,
 } from "@/lib/sap-stock";
@@ -19,7 +18,6 @@ type FichaOtnResponse = {
   info: SistemaOtnRow | null;
   aprobaciones: SistemaOtnAprobacionRow[];
   entregas: {
-    materialesUtilizados: MaterialesUtilizadosResult;
     manuales: SistemaOtnEntregaManualRow[];
   };
   facturas: SalesInvoiceResult;
@@ -28,7 +26,6 @@ type FichaOtnResponse = {
 };
 
 type TabKey = "informacion" | "aprobaciones" | "entregas" | "facturas" | "notas";
-type EntregasSource = "sap" | "manual";
 type SalesInvoiceRow = FichaOtnResponse["facturas"]["rows"][number];
 type SalesCreditNoteRow = FichaOtnResponse["notasCredito"]["rows"][number];
 type InfoFormState = {
@@ -139,50 +136,6 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
-function CompactTable({
-  headers,
-  rows,
-  emptyText,
-}: {
-  headers: Array<{ key: string; label: string; alignRight?: boolean }>;
-  rows: Array<Record<string, string | number | null>>;
-  emptyText: string;
-}) {
-  if (!rows.length) {
-    return <EmptyState text={emptyText} />;
-  }
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
-        <thead className="bg-slate-50 text-[10px] uppercase tracking-[0.2em] text-slate-500">
-          <tr>
-            {headers.map((header) => (
-              <th key={header.key} className={`px-3 py-2 ${header.alignRight ? "text-right" : ""}`}>
-                {header.label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {rows.map((row, index) => (
-            <tr key={index} className="hover:bg-slate-50">
-              {headers.map((header) => (
-                <td
-                  key={header.key}
-                  className={`px-3 py-2 text-slate-700 ${header.alignRight ? "text-right" : ""}`}
-                >
-                  {row[header.key] ?? "-"}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 function StatBox({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
@@ -195,85 +148,28 @@ function StatBox({ label, value }: { label: string; value: string }) {
 }
 
 type EntregasTabProps = {
-  otnId: number;
   otn: string;
-  sapRows: FichaOtnResponse["entregas"]["materialesUtilizados"]["rows"];
   manualRows: SistemaOtnEntregaManualRow[];
-  initialSource: EntregasSource;
   onChanged: () => Promise<void> | void;
 };
 
 function EntregasTab({
-  otnId,
   otn,
-  sapRows,
   manualRows,
-  initialSource,
   onChanged,
 }: EntregasTabProps) {
   const [fechaEntrega, setFechaEntrega] = useState("");
   const [valorEntrega, setValorEntrega] = useState("");
   const [referenciaEntrega, setReferenciaEntrega] = useState("");
-  const [source, setSource] = useState<EntregasSource>(initialSource);
   const [saving, setSaving] = useState(false);
-  const [savingSource, setSavingSource] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const sapTotal = useMemo(
-    () => sapRows.reduce((sum, row) => sum + row.TotalLinea, 0),
-    [sapRows],
-  );
   const manualTotal = useMemo(
     () => manualRows.reduce((sum, row) => sum + row.ValorEntrega, 0),
     [manualRows],
   );
-  const selectedTotal = source === "sap" ? sapTotal : manualTotal;
-  const sourceLabel = source === "sap" ? "Entregas SAP" : "Entregas manuales";
-
-  function sourceToggleClassName(active: boolean) {
-    return [
-      "rounded-full px-3 py-1.5 text-[11px] font-semibold transition",
-      active
-        ? "bg-orange-600 text-white shadow-sm"
-        : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
-    ].join(" ");
-  }
-
-  async function handleSourceChange(nextSource: EntregasSource) {
-    if (!otnId || nextSource === source) {
-      return;
-    }
-
-    setSavingSource(true);
-    setError(null);
-
-    try {
-      const response = await fetch(`/api/produccion/sistema-otn/${otnId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          OTN: otn,
-          EntregaFuente: nextSource,
-        }),
-      });
-
-      const payload = (await response.json()) as { ok?: boolean; error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error ?? "No fue posible actualizar la fuente de entregas.");
-      }
-
-      setSource(nextSource);
-      await onChanged();
-    } catch (sourceError) {
-      setError(
-        sourceError instanceof Error
-          ? sourceError.message
-          : "No fue posible actualizar la fuente de entregas.",
-      );
-    } finally {
-      setSavingSource(false);
-    }
-  }
+  const selectedTotal = manualTotal;
+  const sourceLabel = "Entregas manuales";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -355,26 +251,6 @@ function EntregasTab({
               Vista activa: {sourceLabel}.
             </p>
           </div>
-          <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm">
-            <button
-              type="button"
-              aria-pressed={source === "sap"}
-              onClick={() => void handleSourceChange("sap")}
-              disabled={savingSource}
-              className={sourceToggleClassName(source === "sap")}
-            >
-              SAP
-            </button>
-            <button
-              type="button"
-              aria-pressed={source === "manual"}
-              onClick={() => void handleSourceChange("manual")}
-              disabled={savingSource}
-              className={sourceToggleClassName(source === "manual")}
-            >
-              Manuales
-            </button>
-          </div>
         </div>
         <form onSubmit={handleSubmit} className="grid gap-3 md:grid-cols-4">
           <div>
@@ -429,94 +305,53 @@ function EntregasTab({
         <div className="grid gap-2 sm:grid-cols-3">
           <StatBox label="Fuente activa" value={sourceLabel} />
           <StatBox label="Total considerado" value={currency(selectedTotal)} />
-          <StatBox label={source === "sap" ? "Total manual" : "Total SAP"} value={currency(source === "sap" ? manualTotal : sapTotal)} />
+          <StatBox label="Total registradas" value={currency(manualTotal)} />
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <div className="grid gap-2">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Entregas SAP
-          </p>
-          {source === "sap" ? (
-            sapRows.length ? (
-              <CompactTable
-                rows={sapRows.map((row) => ({
-                  "N° GD": row.Documento,
-                  Fecha: formatDateDdMmYyyy(row.Fecha),
-                  "Descripcion de la Linea": row.Descripcion,
-                  Cantidad: number(row.Cantidad),
-                  "Precio Unitario": currency(row.PrecioUnitario),
-                  "Valor Total": currency(row.TotalLinea),
-                }))}
-                headers={[
-                  { key: "N° GD", label: "N° GD" },
-                  { key: "Fecha", label: "Fecha" },
-                  { key: "Descripcion de la Linea", label: "Descripcion de la Linea" },
-                  { key: "Cantidad", label: "Cantidad", alignRight: true },
-                  { key: "Precio Unitario", label: "Precio Unitario", alignRight: true },
-                  { key: "Valor Total", label: "Valor Total", alignRight: true },
-                ]}
-                emptyText="No hay entregas registradas para esta OTN."
-              />
-            ) : (
-              <EmptyState text="No hay entregas registradas para esta OTN." />
-            )
-          ) : (
-            <EmptyState text="Activa SAP para ver las entregas registradas en SQL SAP." />
-          )}
-        </div>
-
-        <div className="grid gap-2">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Entregas manuales
-          </p>
-          {source === "manual" ? (
-            manualRows.length ? (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
-                  <thead className="bg-slate-50 text-[10px] uppercase tracking-[0.2em] text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2">Fecha de entrega</th>
-                      <th className="px-3 py-2">Referencia entrega</th>
-                      <th className="px-3 py-2 text-right">Valor entrega</th>
-                      <th className="px-3 py-2 text-right">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {manualRows.map((row) => (
-                      <tr key={row.Id} className="hover:bg-slate-50">
-                        <td className="px-3 py-2 text-slate-700">
-                          {formatDateDdMmYyyy(row.FechaEntrega)}
-                        </td>
-                        <td className="px-3 py-2 text-slate-700">
-                          {row.ReferenciaEntrega ?? "-"}
-                        </td>
-                        <td className="px-3 py-2 text-right text-slate-700">
-                          {currency(row.ValorEntrega)}
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(row.Id)}
-                            disabled={saving}
-                            className="rounded-full border border-red-300 bg-red-50 px-3 py-1.5 text-[11px] font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            Eliminar
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <EmptyState text="No hay entregas manuales registradas para esta OTN." />
-            )
-          ) : (
-            <EmptyState text="Activa manuales para ver las entregas cargadas fuera de SAP." />
-          )}
-        </div>
+      <div className="grid gap-2">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+          Entregas manuales
+        </p>
+        {manualRows.length ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
+              <thead className="bg-slate-50 text-[10px] uppercase tracking-[0.2em] text-slate-500">
+                <tr>
+                  <th className="px-3 py-2">Fecha de entrega</th>
+                  <th className="px-3 py-2">Referencia entrega</th>
+                  <th className="px-3 py-2 text-right">Valor entrega</th>
+                  <th className="px-3 py-2 text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {manualRows.map((row) => (
+                  <tr key={row.Id} className="hover:bg-slate-50">
+                    <td className="px-3 py-2 text-slate-700">
+                      {formatDateDdMmYyyy(row.FechaEntrega)}
+                    </td>
+                    <td className="px-3 py-2 text-slate-700">{row.ReferenciaEntrega ?? "-"}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">
+                      {currency(row.ValorEntrega)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(row.Id)}
+                        disabled={saving}
+                        className="rounded-full border border-red-300 bg-red-50 px-3 py-1.5 text-[11px] font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Eliminar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyState text="No hay entregas manuales registradas para esta OTN." />
+        )}
       </div>
     </div>
   );
@@ -698,22 +533,16 @@ export function FichaOtnClient() {
 
   const facturasRows = useMemo(() => data?.facturas.rows ?? [], [data]);
   const notasCreditoRows = useMemo(() => data?.notasCredito.rows ?? [], [data]);
-  const entregasFuente = info?.EntregaFuente?.trim().toLowerCase() === "manual" ? "manual" : "sap";
-  const entregasFuenteLabel = entregasFuente === "manual" ? "Manuales" : "SAP";
+  const entregasFuenteLabel = "Manuales";
 
   const resumenTotales = useMemo(() => {
     const totalPresupuesto = info?.ValorPpto ?? 0;
     const totalAprobado = aprobacionesTotal;
-    const totalEntregadoSap = (data?.entregas.materialesUtilizados.rows ?? []).reduce(
-      (sum, row) => sum + row.TotalLinea,
-      0,
-    );
     const totalEntregadoManual = (data?.entregas.manuales ?? []).reduce(
       (sum, row) => sum + row.ValorEntrega,
       0,
     );
-    const totalEntregado =
-      entregasFuente === "manual" ? totalEntregadoManual : totalEntregadoSap;
+    const totalEntregado = totalEntregadoManual;
     const totalFacturado = facturasRows.reduce((sum, row) => sum + row.Total, 0);
     const totalNotasCredito = notasCreditoRows.reduce((sum, row) => sum + row.TotalNeto, 0);
     const totalFacturadoPendiente = facturasRows.reduce(
@@ -729,7 +558,7 @@ export function FichaOtnClient() {
       totalNotasCredito,
       totalFacturadoPendiente,
     };
-  }, [aprobacionesTotal, data, entregasFuente, facturasRows, info?.ValorPpto, notasCreditoRows]);
+  }, [aprobacionesTotal, data, facturasRows, info?.ValorPpto, notasCreditoRows]);
 
   const estadoOtn = useMemo(
     () => getSistemaOtnEstado(resumenTotales),
@@ -1283,12 +1112,9 @@ export function FichaOtnClient() {
 
             {activeTab === "entregas" ? (
                 <EntregasTab
-                  key={`${info?.Id ?? 0}-${entregasFuente}`}
-                  otnId={info?.Id ?? 0}
+                  key={`${info?.Id ?? 0}`}
                   otn={data?.otn ?? otn}
-                  sapRows={data?.entregas.materialesUtilizados.rows ?? []}
                 manualRows={data?.entregas.manuales ?? []}
-                initialSource={entregasFuente}
                 onChanged={refreshFicha}
               />
             ) : null}

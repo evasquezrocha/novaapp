@@ -47,7 +47,11 @@ export async function PATCH(
       MarcaId?: number | null;
       Modelo?: string | null;
       SeriePatente?: string | null;
-      Anio?: number | null;
+      NumeroFactura?: string | null;
+      FechaFactura?: string | null;
+      Valor?: number | null;
+      PropioLeasing?: string | null;
+      TotalmenteDepreciado?: boolean | null;
       Observacion?: string | null;
       GrupoContableId?: number | null;
     };
@@ -71,7 +75,11 @@ export async function PATCH(
       MarcaId: body.MarcaId ?? null,
       Modelo: body.Modelo?.trim() || null,
       SeriePatente: body.SeriePatente?.trim() || null,
-      Anio: body.Anio ?? null,
+      NumeroFactura: body.NumeroFactura?.trim() || null,
+      FechaFactura: body.FechaFactura?.trim() || null,
+      Valor: body.Valor ?? null,
+      PropioLeasing: body.PropioLeasing?.trim() || null,
+      TotalmenteDepreciado: body.TotalmenteDepreciado ?? false,
       Observacion: body.Observacion?.trim() || null,
       GrupoContableId: body.GrupoContableId ?? null,
     });

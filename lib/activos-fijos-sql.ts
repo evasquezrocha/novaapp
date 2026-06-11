@@ -21,6 +21,11 @@ export type ActivoFijoRow = {
   Marca: string | null;
   Modelo: string | null;
   SeriePatente: string | null;
+  NumeroFactura: string | null;
+  FechaFactura: string | null;
+  Valor: number | null;
+  PropioLeasing: string | null;
+  TotalmenteDepreciado: boolean | null;
   Anio: number | null;
   Observacion: string | null;
   GrupoContableId: number | null;
@@ -37,10 +42,7 @@ export type ActivoFijoCatalogos = {
 
 type CatalogKey = "tipo" | "marca" | "grupoContable";
 
-const CATALOG_TABLES: Record<
-  CatalogKey,
-  { tableName: string }
-> = {
+const CATALOG_TABLES: Record<CatalogKey, { tableName: string }> = {
   tipo: {
     tableName: "dbo.ActivosFijosTipos",
   },
@@ -72,6 +74,33 @@ function sqlNumber(value: number | null | undefined) {
   return value === null || value === undefined ? "NULL" : String(value);
 }
 
+function sqlBit(value: boolean | null | undefined) {
+  if (value === null || value === undefined) {
+    return "NULL";
+  }
+
+  return value ? "1" : "0";
+}
+
+function sqlDate(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return "NULL";
+  }
+
+  return `CONVERT(date, N'${escapeSqlString(trimmed)}', 23)`;
+}
+
+function deriveYearFromDate(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const match = /^(\d{4})-\d{2}-\d{2}$/.exec(trimmed);
+  return match ? Number(match[1]) : null;
+}
+
 function normalizeCatalogRow(row: CatalogRow): CatalogRow {
   return {
     ...row,
@@ -94,7 +123,15 @@ const listActivosFijosCached = unstable_cache(
         M.Nombre AS Marca,
         AF.Modelo,
         AF.SeriePatente,
-        AF.Anio,
+        AF.NumeroFactura,
+        CONVERT(varchar(10), AF.FechaFactura, 23) AS FechaFactura,
+        AF.Valor,
+        AF.PropioLeasing,
+        AF.TotalmenteDepreciado,
+        CASE
+          WHEN AF.FechaFactura IS NULL THEN NULL
+          ELSE YEAR(AF.FechaFactura)
+        END AS Anio,
         AF.Observacion,
         AF.GrupoContableId,
         G.Nombre AS GrupoContable,
@@ -171,7 +208,15 @@ export async function getActivoFijoById(id: number): Promise<ActivoFijoRow | nul
       M.Nombre AS Marca,
       AF.Modelo,
       AF.SeriePatente,
-      AF.Anio,
+      AF.NumeroFactura,
+      CONVERT(varchar(10), AF.FechaFactura, 23) AS FechaFactura,
+      AF.Valor,
+      AF.PropioLeasing,
+      AF.TotalmenteDepreciado,
+      CASE
+        WHEN AF.FechaFactura IS NULL THEN NULL
+        ELSE YEAR(AF.FechaFactura)
+      END AS Anio,
       AF.Observacion,
       AF.GrupoContableId,
       G.Nombre AS GrupoContable,
@@ -215,7 +260,11 @@ export async function createActivoFijo(input: {
   MarcaId?: number | null;
   Modelo?: string | null;
   SeriePatente?: string | null;
-  Anio?: number | null;
+  NumeroFactura?: string | null;
+  FechaFactura?: string | null;
+  Valor?: number | null;
+  PropioLeasing?: string | null;
+  TotalmenteDepreciado?: boolean | null;
   Observacion?: string | null;
   GrupoContableId?: number | null;
 }) {
@@ -227,15 +276,52 @@ export async function createActivoFijo(input: {
   const MarcaId = sqlNumber(normalizeBooleanId(input.MarcaId));
   const Modelo = sqlString(input.Modelo ?? null);
   const SeriePatente = sqlString(input.SeriePatente ?? null);
-  const Anio = sqlNumber(normalizeBooleanId(input.Anio));
+  const NumeroFactura = sqlString(input.NumeroFactura ?? null);
+  const FechaFactura = sqlDate(input.FechaFactura ?? null);
+  const Valor = sqlNumber(input.Valor);
+  const PropioLeasing = sqlString(input.PropioLeasing ?? null);
+  const TotalmenteDepreciado = sqlBit(input.TotalmenteDepreciado);
+  const Anio = sqlNumber(deriveYearFromDate(input.FechaFactura));
   const Observacion = sqlString(input.Observacion ?? null);
   const GrupoContableId = sqlNumber(normalizeBooleanId(input.GrupoContableId));
 
   await pool.request().query(`
     INSERT INTO dbo.ActivosFijos
-      (AF, OC, Descripcion, TipoActivoId, MarcaId, Modelo, SeriePatente, Anio, Observacion, GrupoContableId)
+      (
+        AF,
+        OC,
+        Descripcion,
+        TipoActivoId,
+        MarcaId,
+        Modelo,
+        SeriePatente,
+        NumeroFactura,
+        FechaFactura,
+        Valor,
+        PropioLeasing,
+        TotalmenteDepreciado,
+        Anio,
+        Observacion,
+        GrupoContableId
+      )
     VALUES
-      (${AF}, ${OC}, ${Descripcion}, ${TipoActivoId}, ${MarcaId}, ${Modelo}, ${SeriePatente}, ${Anio}, ${Observacion}, ${GrupoContableId})
+      (
+        ${AF},
+        ${OC},
+        ${Descripcion},
+        ${TipoActivoId},
+        ${MarcaId},
+        ${Modelo},
+        ${SeriePatente},
+        ${NumeroFactura},
+        ${FechaFactura},
+        ${Valor},
+        ${PropioLeasing},
+        ${TotalmenteDepreciado},
+        ${Anio},
+        ${Observacion},
+        ${GrupoContableId}
+      )
   `);
 
   revalidateTag(PLATFORM_CACHE_TAGS.activosFijos, "max");
@@ -250,7 +336,11 @@ export async function updateActivoFijo(input: {
   MarcaId?: number | null;
   Modelo?: string | null;
   SeriePatente?: string | null;
-  Anio?: number | null;
+  NumeroFactura?: string | null;
+  FechaFactura?: string | null;
+  Valor?: number | null;
+  PropioLeasing?: string | null;
+  TotalmenteDepreciado?: boolean | null;
   Observacion?: string | null;
   GrupoContableId?: number | null;
 }) {
@@ -262,7 +352,12 @@ export async function updateActivoFijo(input: {
   const MarcaId = sqlNumber(normalizeBooleanId(input.MarcaId));
   const Modelo = sqlString(input.Modelo ?? null);
   const SeriePatente = sqlString(input.SeriePatente ?? null);
-  const Anio = sqlNumber(normalizeBooleanId(input.Anio));
+  const NumeroFactura = sqlString(input.NumeroFactura ?? null);
+  const FechaFactura = sqlDate(input.FechaFactura ?? null);
+  const Valor = sqlNumber(input.Valor);
+  const PropioLeasing = sqlString(input.PropioLeasing ?? null);
+  const TotalmenteDepreciado = sqlBit(input.TotalmenteDepreciado);
+  const Anio = sqlNumber(deriveYearFromDate(input.FechaFactura));
   const Observacion = sqlString(input.Observacion ?? null);
   const GrupoContableId = sqlNumber(normalizeBooleanId(input.GrupoContableId));
 
@@ -276,6 +371,11 @@ export async function updateActivoFijo(input: {
       MarcaId = ${MarcaId},
       Modelo = ${Modelo},
       SeriePatente = ${SeriePatente},
+      NumeroFactura = ${NumeroFactura},
+      FechaFactura = ${FechaFactura},
+      Valor = ${Valor},
+      PropioLeasing = ${PropioLeasing},
+      TotalmenteDepreciado = ${TotalmenteDepreciado},
       Anio = ${Anio},
       Observacion = ${Observacion},
       GrupoContableId = ${GrupoContableId},

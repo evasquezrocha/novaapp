@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { formatDateDdMmYyyy } from "@/lib/date-format";
 import type {
   ActivoFijoCatalogos,
   ActivoFijoRow,
@@ -18,7 +19,11 @@ type FormState = {
   MarcaId: string;
   Modelo: string;
   SeriePatente: string;
-  Anio: string;
+  NumeroFactura: string;
+  FechaFactura: string;
+  Valor: string;
+  PropioLeasing: string;
+  TotalmenteDepreciado: boolean;
   Observacion: string;
   GrupoContableId: string;
 };
@@ -31,8 +36,13 @@ type SortKey =
   | "Marca"
   | "Modelo"
   | "SeriePatente"
-  | "Anio"
   | "Observacion"
+  | "NumeroFactura"
+  | "FechaFactura"
+  | "Valor"
+  | "PropioLeasing"
+  | "TotalmenteDepreciado"
+  | "Anio"
   | "GrupoContable";
 
 type SortDirection = "asc" | "desc";
@@ -45,7 +55,11 @@ const INITIAL_FORM: FormState = {
   MarcaId: "",
   Modelo: "",
   SeriePatente: "",
-  Anio: "",
+  NumeroFactura: "",
+  FechaFactura: "",
+  Valor: "",
+  PropioLeasing: "",
+  TotalmenteDepreciado: false,
   Observacion: "",
   GrupoContableId: "",
 };
@@ -62,6 +76,26 @@ function formatNullable(value: string | number | null | undefined) {
   }
 
   return String(value);
+}
+
+function formatBoolean(value: boolean | null | undefined) {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+
+  return value ? "Sí" : "No";
+}
+
+function formatCurrency(value: number | null | undefined) {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+
+  return new Intl.NumberFormat("es-CL", {
+    style: "currency",
+    currency: "CLP",
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
 function isValidPositiveInteger(value: string) {
@@ -114,6 +148,10 @@ function compareValues(left: string | number | null, right: string | number | nu
     return left - right;
   }
 
+  if (typeof left === "boolean" && typeof right === "boolean") {
+    return Number(left) - Number(right);
+  }
+
   return String(left).localeCompare(String(right), "es", {
     numeric: true,
     sensitivity: "base",
@@ -132,6 +170,8 @@ export function ActivosFijosManager({
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [catalogDrafts, setCatalogDrafts] = useState<CatalogDrafts>(INITIAL_CATALOG_DRAFTS);
+  const [showForm, setShowForm] = useState(false);
+  const [showCatalogs, setShowCatalogs] = useState(false);
   const [saving, setSaving] = useState(false);
   const [catalogSaving, setCatalogSaving] = useState<CatalogKey | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -148,6 +188,7 @@ export function ActivosFijosManager({
     () => activos.find((row) => row.Id === selectedId) ?? null,
     [activos, selectedId],
   );
+  const showSidePanels = showForm || showCatalogs;
 
   const filteredActivos = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -182,6 +223,11 @@ export function ActivosFijosManager({
         row.Marca,
         row.Modelo,
         row.SeriePatente,
+        row.NumeroFactura,
+        row.FechaFactura,
+        row.Valor?.toString(),
+        row.PropioLeasing,
+        row.TotalmenteDepreciado ? "Sí" : "No",
         row.Observacion,
         row.GrupoContable,
         row.Anio?.toString(),
@@ -257,10 +303,19 @@ export function ActivosFijosManager({
     setSelectedId(null);
     setForm(INITIAL_FORM);
     setError(null);
+    setShowForm(false);
+  }
+
+  function openNewForm() {
+    setSelectedId(null);
+    setForm(INITIAL_FORM);
+    setError(null);
+    setShowForm(true);
   }
 
   function startEdit(row: ActivoFijoRow) {
     setSelectedId(row.Id);
+    setShowForm(true);
     setForm({
       AF: row.AF,
       OC: row.OC ?? "",
@@ -269,7 +324,11 @@ export function ActivosFijosManager({
       MarcaId: row.MarcaId ? String(row.MarcaId) : "",
       Modelo: row.Modelo ?? "",
       SeriePatente: row.SeriePatente ?? "",
-      Anio: row.Anio ? String(row.Anio) : "",
+      NumeroFactura: row.NumeroFactura ?? "",
+      FechaFactura: row.FechaFactura ?? "",
+      Valor: row.Valor === null || row.Valor === undefined ? "" : String(row.Valor),
+      PropioLeasing: row.PropioLeasing ?? "",
+      TotalmenteDepreciado: row.TotalmenteDepreciado ?? false,
       Observacion: row.Observacion ?? "",
       GrupoContableId: row.GrupoContableId ? String(row.GrupoContableId) : "",
     });
@@ -317,7 +376,11 @@ export function ActivosFijosManager({
         MarcaId: isValidPositiveInteger(form.MarcaId),
         Modelo: form.Modelo.trim() || null,
         SeriePatente: form.SeriePatente.trim() || null,
-        Anio: isValidPositiveInteger(form.Anio),
+        NumeroFactura: form.NumeroFactura.trim() || null,
+        FechaFactura: form.FechaFactura.trim() || null,
+        Valor: form.Valor.trim() ? Number(form.Valor) : null,
+        PropioLeasing: form.PropioLeasing.trim() || null,
+        TotalmenteDepreciado: form.TotalmenteDepreciado,
         Observacion: form.Observacion.trim() || null,
         GrupoContableId: isValidPositiveInteger(form.GrupoContableId),
       };
@@ -406,31 +469,28 @@ export function ActivosFijosManager({
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[420px_1fr]">
-      <div className="grid gap-6">
+    <div
+      className={`grid gap-6 ${
+        showSidePanels ? "xl:grid-cols-[560px_minmax(0,1fr)]" : ""
+      }`}
+    >
+      {showSidePanels && (
+        <div className="grid gap-6">
         <form
           onSubmit={handleSubmit}
+          hidden={!showForm}
           className="rounded-3xl border border-slate-200 bg-slate-50 p-6 shadow-sm"
         >
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.3em] text-cyan-700">
-                {selectedId ? "Editar activo fijo" : "Nuevo activo fijo"}
+                Activo fijo
               </p>
               <h3 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-                {selectedId ? "Modificar registro" : "Crear registro"}
+                {selectedId ? "Editar registro" : "Nuevo registro"}
               </h3>
             </div>
 
-            {selectedId ? (
-              <button
-                type="button"
-                onClick={resetForm}
-                className="rounded-full border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-white"
-              >
-                Cancelar
-              </button>
-            ) : null}
           </div>
 
           <div className="mt-6 grid gap-4">
@@ -534,15 +594,76 @@ export function ActivosFijosManager({
               </label>
 
               <label className="grid gap-2 text-sm font-medium text-slate-700">
-                Año
+                Nro. Factura
                 <input
-                  inputMode="numeric"
-                  value={form.Anio}
+                  value={form.NumeroFactura}
                   onChange={(event) =>
-                    setForm((current) => ({ ...current, Anio: event.target.value }))
+                    setForm((current) => ({ ...current, NumeroFactura: event.target.value }))
                   }
                   className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
                 />
+              </label>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                Fecha Factura
+                <input
+                  type="date"
+                  value={form.FechaFactura}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, FechaFactura: event.target.value }))
+                  }
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
+                />
+                <span className="text-[11px] font-normal text-slate-500">
+                  El año se calcula automáticamente desde esta fecha.
+                </span>
+              </label>
+
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                Valor
+                <input
+                  type="number"
+                  step="0.01"
+                  value={form.Valor}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, Valor: event.target.value }))
+                  }
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
+                />
+              </label>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                Propio / Leasing
+                <select
+                  value={form.PropioLeasing}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, PropioLeasing: event.target.value }))
+                  }
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
+                >
+                  <option value="">Sin definir</option>
+                  <option value="Propio">Propio</option>
+                  <option value="Leasing">Leasing</option>
+                </select>
+              </label>
+
+              <label className="flex items-center gap-3 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={form.TotalmenteDepreciado}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      TotalmenteDepreciado: event.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-200"
+                />
+                <span>Totalmente Depreciado</span>
               </label>
             </div>
 
@@ -595,17 +716,11 @@ export function ActivosFijosManager({
           </div>
         </form>
 
-        <div className="grid gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.3em] text-cyan-700">
-              Catálogos rápidos
-            </p>
-            <h3 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-              Agregar tipos, marcas y grupos
-            </h3>
-          </div>
-
-          <div className="grid gap-4">
+        <div
+          className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
+          hidden={!showCatalogs}
+        >
+          <div className="mt-0 grid gap-4">
             {(["tipo", "marca", "grupoContable"] as CatalogKey[]).map((category) => {
               const rows = getCatalogRows(catalogos, category);
 
@@ -668,6 +783,7 @@ export function ActivosFijosManager({
           ) : null}
         </div>
       </div>
+      )}
 
       <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 px-6 py-4">
@@ -684,13 +800,31 @@ export function ActivosFijosManager({
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={resetFilters}
-              className="w-fit rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              Limpiar filtros
-            </button>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={showForm ? resetForm : openNewForm}
+                className="rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+              >
+                {showForm ? "Cerrar formulario" : "Nuevo activo fijo"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowCatalogs((current) => !current)}
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              >
+                {showCatalogs ? "Cerrar catálogos" : "Abrir catálogos"}
+              </button>
+
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              >
+                Limpiar filtros
+              </button>
+            </div>
           </div>
         </div>
 
@@ -700,7 +834,7 @@ export function ActivosFijosManager({
             <input
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="AF, OC, descripción, marca, modelo..."
+              placeholder="AF, OC, factura, marca, modelo..."
               className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
             />
           </label>
@@ -765,29 +899,36 @@ export function ActivosFijosManager({
           </label>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-[1400px] divide-y divide-slate-200 text-left text-sm">
+        <div className="max-h-[calc(100vh-20rem)] overflow-auto">
+          <table className="min-w-[2200px] divide-y divide-slate-200 text-left text-sm">
             <thead className="bg-slate-50 text-slate-700">
               <tr>
-                <th className="px-4 py-3 font-semibold">{sortLabel("AF", "AF")}</th>
-                <th className="px-4 py-3 font-semibold">{sortLabel("OC", "OC")}</th>
-                <th className="px-4 py-3 font-semibold">{sortLabel("Descripción", "Descripcion")}</th>
-                <th className="px-4 py-3 font-semibold">{sortLabel("Tipo de Activo", "TipoActivo")}</th>
-                <th className="px-4 py-3 font-semibold">{sortLabel("Marca", "Marca")}</th>
-                <th className="px-4 py-3 font-semibold">{sortLabel("Modelo", "Modelo")}</th>
-                <th className="px-4 py-3 font-semibold">{sortLabel("Serie / Patente", "SeriePatente")}</th>
-                <th className="px-4 py-3 font-semibold">{sortLabel("Año", "Anio")}</th>
-                <th className="px-4 py-3 font-semibold">{sortLabel("Observación", "Observacion")}</th>
-                <th className="px-4 py-3 font-semibold">
+                <th className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 px-4 py-3 font-semibold">{sortLabel("AF", "AF")}</th>
+                <th className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 px-4 py-3 font-semibold">{sortLabel("OC", "OC")}</th>
+                <th className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 px-4 py-3 font-semibold">{sortLabel("Descripción", "Descripcion")}</th>
+                <th className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 px-4 py-3 font-semibold">{sortLabel("Tipo AF", "TipoActivo")}</th>
+                <th className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 px-4 py-3 font-semibold">{sortLabel("Marca", "Marca")}</th>
+                <th className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 px-4 py-3 font-semibold">{sortLabel("Modelo", "Modelo")}</th>
+                <th className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 px-4 py-3 font-semibold">{sortLabel("Nro. Serie / Patente", "SeriePatente")}</th>
+                <th className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 px-4 py-3 font-semibold">{sortLabel("Observación", "Observacion")}</th>
+                <th className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 px-4 py-3 font-semibold">{sortLabel("N° Factura", "NumeroFactura")}</th>
+                <th className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 px-4 py-3 font-semibold">{sortLabel("Fecha Factura", "FechaFactura")}</th>
+                <th className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 px-4 py-3 font-semibold">{sortLabel("Valor", "Valor")}</th>
+                <th className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 px-4 py-3 font-semibold">{sortLabel("Propio/Leasing", "PropioLeasing")}</th>
+                <th className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 px-4 py-3 font-semibold">
+                  {sortLabel("Totalmente Depreciado", "TotalmenteDepreciado")}
+                </th>
+                <th className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 px-4 py-3 font-semibold">
                   {sortLabel("Grupo Contable", "GrupoContable")}
                 </th>
-                <th className="px-4 py-3 font-semibold">Acciones</th>
+                <th className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 px-4 py-3 font-semibold">{sortLabel("Año", "Anio")}</th>
+                <th className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 px-4 py-3 font-semibold">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredActivos.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-8 text-slate-500" colSpan={11}>
+                  <td className="px-4 py-8 text-slate-500" colSpan={16}>
                     No hay activos fijos que coincidan con los filtros actuales.
                   </td>
                 </tr>
@@ -806,15 +947,26 @@ export function ActivosFijosManager({
                       <td className="px-4 py-3 text-slate-700">
                         {formatNullable(row.SeriePatente)}
                       </td>
-                      <td className="px-4 py-3 text-slate-700">{formatNullable(row.Anio)}</td>
                       <td className="px-4 py-3 text-slate-700">
                         <div className="max-w-[260px] whitespace-pre-wrap">
                           {formatNullable(row.Observacion)}
                         </div>
                       </td>
+                      <td className="px-4 py-3 text-slate-700">{formatNullable(row.NumeroFactura)}</td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {row.FechaFactura ? formatDateDdMmYyyy(row.FechaFactura) : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">{formatCurrency(row.Valor)}</td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {formatNullable(row.PropioLeasing)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {formatBoolean(row.TotalmenteDepreciado)}
+                      </td>
                       <td className="px-4 py-3 text-slate-700">
                         {formatNullable(row.GrupoContable)}
                       </td>
+                      <td className="px-4 py-3 text-slate-700">{formatNullable(row.Anio)}</td>
                       <td className="px-4 py-3">
                         <button
                           type="button"
