@@ -38,6 +38,23 @@ function normalizeText(value) {
     .toLowerCase();
 }
 
+function canonicalCatalogValue(value) {
+  const text = toStringValue(value);
+  if (!text) {
+    return null;
+  }
+
+  const normalized = normalizeText(text);
+  const canonicalByNormalized = {
+    camara: "Cámara",
+    grua: "Grúa",
+    vehiculo: "Vehículo",
+    vehiculos: "Vehículos",
+  };
+
+  return canonicalByNormalized[normalized] ?? text;
+}
+
 function toStringValue(value) {
   if (value === null || value === undefined) {
     return null;
@@ -180,7 +197,7 @@ function mapWorkbookRows(rows) {
         AF: toStringValue(af),
         OC: toStringValue(oc),
         Descripcion: toStringValue(descripcion),
-        TipoNombre: toStringValue(tipoNombre),
+        TipoNombre: canonicalCatalogValue(tipoNombre),
         MarcaNombre: toStringValue(marcaNombre),
         Modelo: toStringValue(modelo),
         SeriePatente: toStringValue(seriePatente),
@@ -190,7 +207,7 @@ function mapWorkbookRows(rows) {
         PropioLeasing: toStringValue(propioLeasing),
         TotalmenteDepreciado: toBooleanValue(totalmenteDepreciado) ?? false,
         Observacion: toStringValue(observacion),
-        GrupoNombre: toStringValue(grupoNombre),
+        GrupoNombre: canonicalCatalogValue(grupoNombre),
         derivedDateFromYear,
       };
     })

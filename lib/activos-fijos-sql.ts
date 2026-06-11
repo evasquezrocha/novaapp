@@ -58,6 +58,18 @@ function normalizeBooleanId(value: unknown) {
   return typeof value === "number" && Number.isInteger(value) ? value : null;
 }
 
+function repairMojibake(value: string) {
+  if (!/[ÃÂ]/.test(value)) {
+    return value.trim();
+  }
+
+  try {
+    return Buffer.from(value, "latin1").toString("utf8").trim();
+  } catch {
+    return value.trim();
+  }
+}
+
 function escapeSqlString(value: string) {
   return value.replace(/'/g, "''");
 }
@@ -104,7 +116,7 @@ function deriveYearFromDate(value: string | null | undefined) {
 function normalizeCatalogRow(row: CatalogRow): CatalogRow {
   return {
     ...row,
-    Nombre: row.Nombre.trim(),
+    Nombre: repairMojibake(row.Nombre),
   };
 }
 
@@ -156,39 +168,32 @@ const listActivosFijosCached = unstable_cache(
   },
 );
 
-const listActivosFijosCatalogosCached = unstable_cache(
-  async () => {
-    const pool = await getAuthPool();
-    const [tipos, marcas, gruposContables] = await Promise.all([
-      pool.request().query<CatalogRow>(`
-        SELECT Id, Nombre
-        FROM dbo.ActivosFijosTipos
-        ORDER BY Nombre ASC, Id ASC
-      `),
-      pool.request().query<CatalogRow>(`
-        SELECT Id, Nombre
-        FROM dbo.ActivosFijosMarcas
-        ORDER BY Nombre ASC, Id ASC
-      `),
-      pool.request().query<CatalogRow>(`
-        SELECT Id, Nombre
-        FROM dbo.ActivosFijosGruposContables
-        ORDER BY Nombre ASC, Id ASC
-      `),
-    ]);
+async function listActivosFijosCatalogosCached() {
+  const pool = await getAuthPool();
+  const [tipos, marcas, gruposContables] = await Promise.all([
+    pool.request().query<CatalogRow>(`
+      SELECT Id, Nombre
+      FROM dbo.ActivosFijosTipos
+      ORDER BY Nombre ASC, Id ASC
+    `),
+    pool.request().query<CatalogRow>(`
+      SELECT Id, Nombre
+      FROM dbo.ActivosFijosMarcas
+      ORDER BY Nombre ASC, Id ASC
+    `),
+    pool.request().query<CatalogRow>(`
+      SELECT Id, Nombre
+      FROM dbo.ActivosFijosGruposContables
+      ORDER BY Nombre ASC, Id ASC
+    `),
+  ]);
 
-    return {
-      tipos: tipos.recordset.map(normalizeCatalogRow),
-      marcas: marcas.recordset.map(normalizeCatalogRow),
-      gruposContables: gruposContables.recordset.map(normalizeCatalogRow),
-    };
-  },
-  ["platform", "activos-fijos", "catalogos"],
-  {
-    tags: [PLATFORM_CACHE_TAGS.activosFijos],
-    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
-  },
-);
+  return {
+    tipos: tipos.recordset.map(normalizeCatalogRow),
+    marcas: marcas.recordset.map(normalizeCatalogRow),
+    gruposContables: gruposContables.recordset.map(normalizeCatalogRow),
+  };
+}
 
 export async function listActivosFijos(): Promise<ActivoFijoRow[]> {
   return listActivosFijosCached();
@@ -389,7 +394,8 @@ export async function updateActivoFijo(input: {
 export async function createCatalogItem(category: CatalogKey, nombre: string) {
   const meta = catalogMeta(category);
   const pool = await getAuthPool();
-  const safeNombre = escapeSqlString(nombre);
+  const normalizedNombre = repairMojibake(nombre);
+  const safeNombre = escapeSqlString(normalizedNombre);
 
   await pool.request().query(`
     INSERT INTO ${meta.tableName}
@@ -404,7 +410,7 @@ export async function createCatalogItem(category: CatalogKey, nombre: string) {
 export async function getCatalogItemByName(category: CatalogKey, nombre: string) {
   const meta = catalogMeta(category);
   const pool = await getAuthPool();
-  const safeNombre = escapeSqlString(nombre);
+  const safeNombre = escapeSqlString(repairMojibake(nombre));
   const result = await pool.request().query<CatalogRow>(`
     SELECT Id, Nombre
     FROM ${meta.tableName}
@@ -412,6 +418,93 @@ export async function getCatalogItemByName(category: CatalogKey, nombre: string)
   `);
 
   return result.recordset[0] ?? null;
+}
+
+export async function getCatalogItemById(category: CatalogKey, id: number) {
+  const meta = catalogMeta(category);
+  const pool = await getAuthPool();
+  const safeId = Number(id);
+  if (!Number.isInteger(safeId) || safeId <= 0) {
+    throw new Error("Debes indicar un id válido.");
+  }
+
+  const result = await pool.request().query<CatalogRow>(`
+    SELECT Id, Nombre
+    FROM ${meta.tableName}
+    WHERE Id = ${safeId}
+  `);
+
+  return result.recordset[0] ?? null;
+}
+
+export async function updateCatalogItem(category: CatalogKey, id: number, nombre: string) {
+  const meta = catalogMeta(category);
+  const pool = await getAuthPool();
+  const normalizedNombre = repairMojibake(nombre);
+  const safeNombre = escapeSqlString(normalizedNombre);
+  const safeId = Number(id);
+  if (!Number.isInteger(safeId) || safeId <= 0) {
+    throw new Error("Debes indicar un id válido.");
+  }
+
+  const result = await pool.request().query(`
+    UPDATE ${meta.tableName}
+    SET Nombre = N'${safeNombre}'
+    WHERE Id = ${safeId}
+  `);
+
+  if (!result.rowsAffected[0]) {
+    throw new Error("No se actualizó ningún registro.");
+  }
+
+  revalidateTag(PLATFORM_CACHE_TAGS.activosFijos, "max");
+}
+
+export async function countCatalogItemUsage(category: CatalogKey, id: number) {
+  const pool = await getAuthPool();
+  const columnName =
+    category === "tipo"
+      ? "TipoActivoId"
+      : category === "marca"
+        ? "MarcaId"
+        : "GrupoContableId";
+  const safeId = Number(id);
+  if (!Number.isInteger(safeId) || safeId <= 0) {
+    throw new Error("Debes indicar un id válido.");
+  }
+
+  const result = await pool.request().query<{ total: number }>(`
+    SELECT COUNT(1) AS total
+    FROM dbo.ActivosFijos
+    WHERE ${columnName} = ${safeId}
+  `);
+
+  return result.recordset[0]?.total ?? 0;
+}
+
+export async function deleteCatalogItem(category: CatalogKey, id: number) {
+  const meta = catalogMeta(category);
+  const pool = await getAuthPool();
+  const usage = await countCatalogItemUsage(category, id);
+  const safeId = Number(id);
+  if (!Number.isInteger(safeId) || safeId <= 0) {
+    throw new Error("Debes indicar un id válido.");
+  }
+
+  if (usage > 0) {
+    throw new Error(`No se puede eliminar porque está asociado a ${usage} activo(s) fijo(s).`);
+  }
+
+  const result = await pool.request().query(`
+    DELETE FROM ${meta.tableName}
+    WHERE Id = ${safeId}
+  `);
+
+  if (!result.rowsAffected[0]) {
+    throw new Error("No se eliminó ningún registro.");
+  }
+
+  revalidateTag(PLATFORM_CACHE_TAGS.activosFijos, "max");
 }
 
 export type { CatalogKey };

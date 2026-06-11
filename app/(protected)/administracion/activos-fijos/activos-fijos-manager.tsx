@@ -11,6 +11,12 @@ import type {
 
 type CatalogDrafts = Record<CatalogKey, string>;
 
+type CatalogEditState = {
+  category: CatalogKey;
+  id: number;
+  nombre: string;
+} | null;
+
 type FormState = {
   AF: string;
   OC: string;
@@ -174,6 +180,7 @@ export function ActivosFijosManager({
   const [showCatalogs, setShowCatalogs] = useState(false);
   const [saving, setSaving] = useState(false);
   const [catalogSaving, setCatalogSaving] = useState<CatalogKey | null>(null);
+  const [catalogEdit, setCatalogEdit] = useState<CatalogEditState>(null);
   const [error, setError] = useState<string | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -313,6 +320,20 @@ export function ActivosFijosManager({
     setShowForm(true);
   }
 
+  function startEditCatalog(category: CatalogKey, row: CatalogRow) {
+    setShowCatalogs(true);
+    setCatalogError(null);
+    setCatalogEdit({
+      category,
+      id: row.Id,
+      nombre: row.Nombre,
+    });
+  }
+
+  function cancelEditCatalog() {
+    setCatalogEdit(null);
+  }
+
   function startEdit(row: ActivoFijoRow) {
     setSelectedId(row.Id);
     setShowForm(true);
@@ -432,7 +453,7 @@ export function ActivosFijosManager({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ nombre }),
+        body: JSON.stringify({ action: "create", nombre }),
       });
 
       const data = (await response.json()) as {
@@ -462,6 +483,138 @@ export function ActivosFijosManager({
         creationError instanceof Error
           ? creationError.message
           : "No fue posible agregar el catálogo.",
+      );
+    } finally {
+      setCatalogSaving(null);
+    }
+  }
+
+  async function handleUpdateCatalog() {
+    if (!catalogEdit) {
+      return;
+    }
+
+    const nombre = catalogEdit.nombre.trim();
+    if (!nombre) {
+      return;
+    }
+
+    setCatalogSaving(catalogEdit.category);
+    setCatalogError(null);
+
+    try {
+      const response = await fetch(catalogRoute(catalogEdit.category), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "update",
+          id: catalogEdit.id,
+          nombre,
+        }),
+      });
+
+      const data = (await response.json()) as {
+        error?: string;
+        row?: CatalogRow;
+      };
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ?? `No fue posible actualizar ${buildCatalogLabel(catalogEdit.category).toLowerCase()}.`,
+        );
+      }
+
+      if (data.row) {
+        setCatalogos((current) => ({
+          ...current,
+          ...(catalogEdit.category === "tipo"
+            ? {
+                tipos: current.tipos.map((row) =>
+                  row.Id === data.row?.Id ? { ...row, Nombre: data.row.Nombre } : row,
+                ),
+              }
+            : catalogEdit.category === "marca"
+              ? {
+                  marcas: current.marcas.map((row) =>
+                    row.Id === data.row?.Id ? { ...row, Nombre: data.row.Nombre } : row,
+                  ),
+                }
+              : {
+                  gruposContables: current.gruposContables.map((row) =>
+                    row.Id === data.row?.Id ? { ...row, Nombre: data.row.Nombre } : row,
+                  ),
+                }),
+        }));
+        setCatalogDrafts((current) => ({
+          ...current,
+          [catalogEdit.category]: "",
+        }));
+      }
+
+      setCatalogEdit(null);
+    } catch (updateError) {
+      setCatalogError(
+        updateError instanceof Error
+          ? updateError.message
+          : "No fue posible actualizar el catálogo.",
+      );
+    } finally {
+      setCatalogSaving(null);
+    }
+  }
+
+  async function handleDeleteCatalog(category: CatalogKey, row: CatalogRow) {
+    const confirmed = window.confirm(
+      `¿Eliminar "${row.Nombre}"? Solo se podrá borrar si no está asociado a ningún activo fijo.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setCatalogSaving(category);
+    setCatalogError(null);
+
+    try {
+      const response = await fetch(catalogRoute(category), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "delete",
+          id: row.Id,
+        }),
+      });
+
+      const data = (await response.json()) as {
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(data.error ?? `No fue posible eliminar ${buildCatalogLabel(category).toLowerCase()}.`);
+      }
+
+      setCatalogos((current) => ({
+        ...current,
+        ...(category === "tipo"
+          ? { tipos: current.tipos.filter((item) => item.Id !== row.Id) }
+          : category === "marca"
+            ? { marcas: current.marcas.filter((item) => item.Id !== row.Id) }
+            : {
+                gruposContables: current.gruposContables.filter((item) => item.Id !== row.Id),
+              }),
+      }));
+
+      if (catalogEdit?.category === category && catalogEdit.id === row.Id) {
+        setCatalogEdit(null);
+      }
+    } catch (deletionError) {
+      setCatalogError(
+        deletionError instanceof Error
+          ? deletionError.message
+          : "No fue posible eliminar el catálogo.",
       );
     } finally {
       setCatalogSaving(null);
@@ -756,20 +909,74 @@ export function ActivosFijosManager({
                   </div>
 
                   {rows.length > 0 ? (
-                    <ul className="mt-3 flex flex-wrap gap-2">
-                      {rows.slice(0, 8).map((row) => (
-                        <li
-                          key={row.Id}
-                          className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700"
-                        >
-                          {row.Nombre}
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="mt-3 grid gap-2">
+                      {rows.map((row) => {
+                        const isEditing =
+                          catalogEdit?.category === category && catalogEdit.id === row.Id;
+
+                        return (
+                          <div
+                            key={row.Id}
+                            className="flex flex-col gap-2 rounded-xl bg-slate-50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                          >
+                            {isEditing ? (
+                              <>
+                                <input
+                                  value={catalogEdit.nombre}
+                                  onChange={(event) =>
+                                    setCatalogEdit((current) =>
+                                      current
+                                        ? { ...current, nombre: event.target.value }
+                                        : current,
+                                    )
+                                  }
+                                  className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
+                                />
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleUpdateCatalog()}
+                                    disabled={catalogSaving === category}
+                                    className="rounded-lg bg-cyan-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {catalogSaving === category ? "..." : "Guardar"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={cancelEditCatalog}
+                                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                                  >
+                                    Cancelar
+                                  </button>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <span className="text-sm font-medium text-slate-800">
+                                  {row.Nombre}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => startEditCatalog(category, row)}
+                                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                                >
+                                  Editar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleDeleteCatalog(category, row)}
+                                  className="rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50"
+                                >
+                                  Eliminar
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   ) : (
-                    <p className="mt-3 text-sm text-slate-500">
-                      Aún no hay opciones creadas.
-                    </p>
+                    <p className="mt-3 text-sm text-slate-500">Aún no hay opciones creadas.</p>
                   )}
                 </div>
               );
