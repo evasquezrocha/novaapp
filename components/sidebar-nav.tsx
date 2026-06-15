@@ -28,6 +28,7 @@ export function SidebarNav({
   canSeeUsuarios,
   canSeeLog,
   canSeeMonitoreo,
+  canSeeSistemaOtnImport,
   canSeePermisos,
   canSeeAdministracion,
 }: {
@@ -37,6 +38,7 @@ export function SidebarNav({
   canSeeUsuarios: boolean;
   canSeeLog: boolean;
   canSeeMonitoreo: boolean;
+  canSeeSistemaOtnImport: boolean;
   canSeePermisos: boolean;
   canSeeAdministracion: boolean;
 }) {
@@ -44,10 +46,16 @@ export function SidebarNav({
   const isUsuariosActive = pathname.startsWith("/usuarios");
   const isLogActive = pathname.startsWith("/configuracion/log");
   const isMonitoreoActive = pathname.startsWith("/configuracion/monitoreo");
+  const isImportSistemaOtnActive = pathname.startsWith("/configuracion/importar-sistema-otn");
   const isPermisosActive = pathname.startsWith("/configuracion/permisos");
   const isActivosFijosActive = pathname.startsWith("/administracion/activos-fijos");
 
-  const showConfiguracion = canSeeUsuarios || canSeeLog || canSeeMonitoreo || canSeePermisos;
+  const showConfiguracion =
+    canSeeUsuarios ||
+    canSeeLog ||
+    canSeeMonitoreo ||
+    canSeeSistemaOtnImport ||
+    canSeePermisos;
 
   return (
     <nav aria-label="Menú principal" className="space-y-2">
@@ -182,7 +190,19 @@ export function SidebarNav({
             >
               <span>Monitoreo</span>
               <span aria-hidden className="text-white/90">
-                â†’
+                →
+              </span>
+            </Link>
+          ) : null}
+
+          {canSeeSistemaOtnImport ? (
+            <Link
+              href="/configuracion/importar-sistema-otn"
+              className={`mt-2 ${navLinkClass(isImportSistemaOtnActive)}`}
+            >
+              <span>Importar Sistema OTN</span>
+              <span aria-hidden className="text-white/90">
+                →
               </span>
             </Link>
           ) : null}

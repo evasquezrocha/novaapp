@@ -448,7 +448,10 @@ export function AprobacionesTabEditor({
               <tbody className="divide-y divide-slate-100 bg-white">
                 {visibleRows.length ? (
                   visibleRows.map((row) => (
-                    <tr key={row.Id} className="hover:bg-slate-50">
+                    <tr
+                      key={row.Id}
+                      className="transition hover:bg-slate-100 hover:shadow-[inset_0_0_0_9999px_rgba(15,23,42,0.02)]"
+                    >
                       <td className="px-4 py-3 text-slate-700">
                         {formatDateDdMmYyyy(row.FechaAprobacion)}
                       </td>

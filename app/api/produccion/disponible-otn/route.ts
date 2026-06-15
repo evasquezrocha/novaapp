@@ -11,6 +11,12 @@ import {
   getServiciosSinOcByOtn,
   getServiciosUtilizadosByOtn,
 } from "@/lib/sap-stock";
+import {
+  isSapCompanyKey,
+  resolveSapCompanyKeyFromEmpresa,
+  type SapCompanyKey,
+} from "@/lib/company-config";
+import { getActiveSapCompany } from "@/lib/sap-stock";
 import { canAccess, listPermissions } from "@/lib/permissions-sql";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +36,19 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const otn = searchParams.get("otn");
+  const companyParam = searchParams.get("company")?.trim();
+  const empresaParam = searchParams.get("empresa")?.trim();
+  let companyKey: SapCompanyKey | null = null;
+
+  if (companyParam) {
+    companyKey = isSapCompanyKey(companyParam)
+      ? companyParam
+      : resolveSapCompanyKeyFromEmpresa(companyParam);
+  } else if (empresaParam) {
+    companyKey = resolveSapCompanyKeyFromEmpresa(empresaParam);
+  } else {
+    companyKey = (await getActiveSapCompany()).key;
+  }
 
   if (!otn || !/^\d{4,6}$/.test(otn)) {
     return NextResponse.json(
@@ -49,14 +68,14 @@ export async function GET(request: Request) {
       asientosDirectos,
       fondosRendidos,
     ] = await Promise.all([
-      getProjectBudgetByOtn(otn),
-      getMaterialesUtilizadosByOtn(otn),
-      getMaterialesDevueltosByOtn(otn),
-      getServiciosSinOcByOtn(otn),
-      getServiciosUtilizadosByOtn(otn),
-      getNcServiciosByOtn(otn),
-      getAsientosDirectosByOtn(otn),
-      getFondosRendidosByOtn(otn),
+      getProjectBudgetByOtn(otn, companyKey),
+      getMaterialesUtilizadosByOtn(otn, companyKey),
+      getMaterialesDevueltosByOtn(otn, companyKey),
+      getServiciosSinOcByOtn(otn, companyKey),
+      getServiciosUtilizadosByOtn(otn, companyKey),
+      getNcServiciosByOtn(otn, companyKey),
+      getAsientosDirectosByOtn(otn, companyKey),
+      getFondosRendidosByOtn(otn, companyKey),
     ]);
 
     if (!row) {

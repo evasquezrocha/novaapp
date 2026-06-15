@@ -1,8 +1,15 @@
 "use client";
 
 import type { Dispatch, FormEvent, ReactNode, SetStateAction } from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { formatDateDdMmYyyy } from "@/lib/date-format";
+import {
+  isSapCompanyKey,
+  resolveSapCompanyKeyFromEmpresa,
+  type SapCompanyKey,
+} from "@/lib/company-config";
+import { setActiveSapCompany } from "@/lib/company-session";
 
 type ProjectRow = {
   MATPPTO: number | null;
@@ -553,8 +560,24 @@ function renderSortableTable<T extends Record<string, CellValue>>({
   );
 }
 
-export function DisponibleOtnClient() {
-  const [otn, setOtn] = useState("");
+export function DisponibleOtnClient({
+  currentCompanyKey,
+}: {
+  currentCompanyKey: SapCompanyKey;
+}) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialOtn = searchParams.get("otn")?.trim() ?? "";
+  const companyParam = searchParams.get("company")?.trim();
+  const empresaParam = searchParams.get("empresa")?.trim();
+  const companyKey = companyParam
+    ? isSapCompanyKey(companyParam)
+      ? companyParam
+      : resolveSapCompanyKeyFromEmpresa(companyParam)
+    : empresaParam
+      ? resolveSapCompanyKeyFromEmpresa(empresaParam)
+      : null;
+  const [otn, setOtn] = useState(initialOtn);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [row, setRow] = useState<ProjectRow | null>(null);
@@ -573,6 +596,8 @@ export function DisponibleOtnClient() {
   const [tableState, setTableState] = useState<Record<TabKey, TableState>>(
     getInitialTableState,
   );
+  const autoLoadedOtnRef = useRef<string | null>(null);
+  const syncedCompanyRef = useRef<SapCompanyKey | null>(null);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -595,7 +620,9 @@ export function DisponibleOtnClient() {
 
     try {
       const response = await fetch(
-        `/api/produccion/disponible-otn?otn=${encodeURIComponent(otn)}`,
+        `/api/produccion/disponible-otn?otn=${encodeURIComponent(otn)}${
+          companyKey ? `&company=${encodeURIComponent(companyKey)}` : ""
+        }`,
       );
       const data = (await response.json()) as
         | {
@@ -630,6 +657,83 @@ export function DisponibleOtnClient() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (!initialOtn || autoLoadedOtnRef.current === initialOtn) {
+      return;
+    }
+
+    autoLoadedOtnRef.current = initialOtn;
+    setOtn(initialOtn);
+    void (async () => {
+      setLoading(true);
+      setError(null);
+      setRow(null);
+      setMateriales(null);
+      setMaterialesDevueltos(null);
+      setServiciosSinOc(null);
+      setServiciosUtilizados(null);
+      setNcServicios(null);
+      setAsientosDirectos(null);
+      setFondosRendidos(null);
+
+      try {
+        const response = await fetch(
+          `/api/produccion/disponible-otn?otn=${encodeURIComponent(initialOtn)}${
+            companyKey ? `&company=${encodeURIComponent(companyKey)}` : ""
+          }`,
+        );
+        const data = (await response.json()) as
+          | {
+              row: ProjectRow;
+              materiales: MaterialesUtilizados;
+              materialesDevueltos: MaterialesDevueltos;
+              serviciosSinOc: ServiciosSinOc;
+              serviciosUtilizados: ServiciosUtilizados;
+              ncServicios: NcServicios;
+              asientosDirectos: AsientosDirectos;
+              fondosRendidos: FondosRendidos;
+            }
+          | { error: string };
+
+        if (!response.ok || "error" in data) {
+          setError("error" in data ? data.error : "No fue posible consultar el OTN.");
+          return;
+        }
+
+        setRow(data.row);
+        setMateriales(data.materiales);
+        setMaterialesDevueltos(data.materialesDevueltos);
+        setServiciosSinOc(data.serviciosSinOc);
+        setServiciosUtilizados(data.serviciosUtilizados);
+        setNcServicios(data.ncServicios);
+        setAsientosDirectos(data.asientosDirectos);
+        setFondosRendidos(data.fondosRendidos);
+        setActiveTab("materiales-utilizados");
+      } catch {
+        setError("No fue posible consultar el OTN.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [companyKey, initialOtn]);
+
+  useEffect(() => {
+    if (!companyKey || companyKey === currentCompanyKey || syncedCompanyRef.current === companyKey) {
+      return;
+    }
+
+    syncedCompanyRef.current = companyKey;
+
+    void (async () => {
+      try {
+        await setActiveSapCompany(companyKey);
+        router.refresh();
+      } catch {
+        syncedCompanyRef.current = null;
+      }
+    })();
+  }, [companyKey, currentCompanyKey, router]);
 
   const disponibleMateriales = calculateDisponibleMateriales(
     row?.MATPPTO ?? null,
@@ -724,7 +828,7 @@ export function DisponibleOtnClient() {
                   <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-700">
                     Disponible Materiales
                   </p>
-                  <p className="mt-3 text-4xl font-semibold tracking-tight text-cyan-950">
+                  <p className="mt-3 text-3xl font-semibold tracking-tight text-cyan-950">
                     {formatAmount(disponibleMateriales)}
                   </p>
                 </article>
@@ -742,7 +846,7 @@ export function DisponibleOtnClient() {
                   <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-700">
                     Disponible Servicios
                   </p>
-                  <p className="mt-3 text-4xl font-semibold tracking-tight text-cyan-950">
+                  <p className="mt-3 text-3xl font-semibold tracking-tight text-cyan-950">
                     {formatAmount(disponibleServicios)}
                   </p>
                 </article>
@@ -793,7 +897,7 @@ export function DisponibleOtnClient() {
                   <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-700">
                     Total materiales utilizados
                   </p>
-                  <p className="mt-3 text-4xl font-semibold tracking-tight text-slate-950">
+                  <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
                     {formatAmount(materiales.total)}
                   </p>
                 </div>
@@ -818,7 +922,7 @@ export function DisponibleOtnClient() {
                   <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-700">
                     Total materiales devueltos
                   </p>
-                  <p className="mt-3 text-4xl font-semibold tracking-tight text-slate-950">
+                  <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
                     {formatAmount(materialesDevueltos.total)}
                   </p>
                 </div>
@@ -843,7 +947,7 @@ export function DisponibleOtnClient() {
                   <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-700">
                     Total servicios utilizados sin OC
                   </p>
-                  <p className="mt-3 text-4xl font-semibold tracking-tight text-slate-950">
+                  <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
                     {formatAmount(serviciosSinOc.total)}
                   </p>
                 </div>
@@ -868,7 +972,7 @@ export function DisponibleOtnClient() {
                   <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-700">
                     Total servicios utilizados
                   </p>
-                  <p className="mt-3 text-4xl font-semibold tracking-tight text-slate-950">
+                  <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
                     {formatAmount(serviciosUtilizados.total)}
                   </p>
                 </div>
@@ -893,7 +997,7 @@ export function DisponibleOtnClient() {
                   <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-700">
                     Total NC servicios
                   </p>
-                  <p className="mt-3 text-4xl font-semibold tracking-tight text-slate-950">
+                  <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
                     {formatAmount(ncServicios.total)}
                   </p>
                 </div>
@@ -918,7 +1022,7 @@ export function DisponibleOtnClient() {
                   <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-700">
                     Saldo total asientos directos
                   </p>
-                  <p className="mt-3 text-4xl font-semibold tracking-tight text-slate-950">
+                  <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
                     {formatAmount(asientosDirectos.total)}
                   </p>
                 </div>
@@ -943,7 +1047,7 @@ export function DisponibleOtnClient() {
                   <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-700">
                     Total fondos rendidos
                   </p>
-                  <p className="mt-3 text-4xl font-semibold tracking-tight text-slate-950">
+                  <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
                     {formatAmount(fondosRendidos.total)}
                   </p>
                 </div>

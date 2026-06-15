@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "import:activos-fijos": "node scripts/import-activos-fijos.mjs"
+    "import:activos-fijos": "node scripts/import-activos-fijos.mjs",
+    "import:sistema-otn": "node scripts/import-sistema-otn.mjs"
   },
   "dependencies": {
     "mssql": "^12.5.5",

@@ -36,6 +36,7 @@ export default async function ProtectedLayout({
   const canSeeMonitoreo = canAccess(permissions, session.Rol, "Monitoreo");
   const canSeePermisos = canAccess(permissions, session.Rol, "Permisos");
   const canSeeAdministracion = canAccess(permissions, session.Rol, "Administración");
+  const canSeeSistemaOtnImport = canSeeAdministracion || canSeePermisos;
   const warmupRoutes = [
     canSeeProduccion ? "/produccion/disponible-otn" : null,
     canSeeProduccion ? "/produccion/disponible-cc" : null,
@@ -47,6 +48,7 @@ export default async function ProtectedLayout({
     canSeeUsuarios ? "/usuarios" : null,
     canSeeLog ? "/configuracion/log" : null,
     canSeeMonitoreo ? "/configuracion/monitoreo" : null,
+    canSeeSistemaOtnImport ? "/configuracion/importar-sistema-otn" : null,
     canSeePermisos ? "/configuracion/permisos" : null,
   ].filter((value): value is string => Boolean(value));
   const warmupApiUrls = [
@@ -56,27 +58,24 @@ export default async function ProtectedLayout({
   ].filter((value): value is string => Boolean(value));
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[280px_1fr]">
+    <div className="min-h-screen lg:grid lg:h-screen lg:grid-cols-[280px_1fr] lg:overflow-hidden">
       <PlatformWarmup
         companyKey={company.key}
         routes={warmupRoutes}
         apiUrls={warmupApiUrls}
       />
 
-      <aside className="border-b border-[#f3d2b1] bg-[#2b3a44] px-6 py-8 text-white lg:min-h-screen lg:border-b-0 lg:border-r">
+      <aside className="scrollbar-hidden border-b border-[#f3d2b1] bg-[#2b3a44] px-6 py-8 text-white lg:h-screen lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <div className="mb-10">
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[#ffb347]">
             NovaApp
           </p>
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight">Menú</h1>
-          <div className="mt-4">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.28em] text-[#f3d2b1]">
-              Empresa activa
-            </p>
-            <p className="text-sm font-semibold text-white/90">{company.label}</p>
-          </div>
-          <div className="mt-4">
-            <CompanySwitcher currentCompanyKey={company.key} />
+          <h1 className="mt-3 text-2xl font-semibold tracking-tight">Menu</h1>
+
+          <div className="mt-5 rounded-3xl border border-white/10 bg-white/8 p-4 shadow-inner shadow-black/10">
+            <div>
+              <CompanySwitcher currentCompanyKey={company.key} />
+            </div>
           </div>
         </div>
 
@@ -87,6 +86,7 @@ export default async function ProtectedLayout({
           canSeeUsuarios={canSeeUsuarios}
           canSeeLog={canSeeLog}
           canSeeMonitoreo={canSeeMonitoreo}
+          canSeeSistemaOtnImport={canSeeSistemaOtnImport}
           canSeePermisos={canSeePermisos}
           canSeeAdministracion={canSeeAdministracion}
         />
@@ -94,7 +94,7 @@ export default async function ProtectedLayout({
         <SessionCard name={session.Nombre} role={session.Rol} />
       </aside>
 
-      <main className="min-w-0 p-6 sm:p-8 lg:p-10">{children}</main>
+      <main className="min-w-0 p-6 sm:p-8 lg:h-screen lg:overflow-y-auto lg:p-10">{children}</main>
     </div>
   );
 }

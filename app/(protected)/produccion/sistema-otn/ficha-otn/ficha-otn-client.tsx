@@ -1,8 +1,10 @@
 ﻿"use client";
 
 import { Fragment, useEffect, useMemo, useState, type FormEvent } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { formatDateDdMmYyyy } from "@/lib/date-format";
+import { resolveSapCompanyKeyFromEmpresa } from "@/lib/company-config";
+import { setActiveSapCompany } from "@/lib/company-session";
 import type {
   SalesCreditNoteResult,
   SalesInvoiceResult,
@@ -326,7 +328,10 @@ function EntregasTab({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {manualRows.map((row) => (
-                  <tr key={row.Id} className="hover:bg-slate-50">
+                  <tr
+                    key={row.Id}
+                    className="transition hover:bg-slate-100 hover:shadow-[inset_0_0_0_9999px_rgba(15,23,42,0.02)]"
+                  >
                     <td className="px-3 py-2 text-slate-700">
                       {formatDateDdMmYyyy(row.FechaEntrega)}
                     </td>
@@ -377,6 +382,7 @@ function FieldCell({
 }
 
 export function FichaOtnClient() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const initialOtn = searchParams.get("otn")?.trim() ?? "";
   const [otn, setOtn] = useState(initialOtn);
@@ -597,6 +603,30 @@ export function FichaOtnClient() {
     }
   }
 
+  function handleOpenDisponibleOtn() {
+    const currentOtn = (data?.otn ?? otn).trim();
+    if (!currentOtn) {
+      setError("Escribe una OTN para abrir Disponible OTN.");
+      return;
+    }
+
+    const companyKey = resolveSapCompanyKeyFromEmpresa(data?.info?.Empresa);
+    void (async () => {
+      try {
+        await setActiveSapCompany(companyKey);
+        router.push(
+          `/produccion/disponible-otn?otn=${encodeURIComponent(currentOtn)}&company=${encodeURIComponent(companyKey)}`,
+        );
+      } catch (error) {
+        setError(
+          error instanceof Error
+            ? error.message
+            : "No fue posible cambiar la empresa antes de abrir Disponible OTN.",
+        );
+      }
+    })();
+  }
+
   function startInfoEdit() {
     if (!info) {
       return;
@@ -722,6 +752,15 @@ export function FichaOtnClient() {
                 className="inline-flex shrink-0 items-center rounded-full border border-white/15 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {openingRuta ? "Abriendo..." : "Abrir Carpeta"}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleOpenDisponibleOtn}
+                disabled={loading || !(data?.otn ?? otn).trim()}
+                className="inline-flex shrink-0 items-center rounded-full border border-cyan-300 bg-cyan-400 px-3 py-2 text-xs font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Ir a Disponible OTN
               </button>
             </div>
 
@@ -1185,7 +1224,7 @@ function FacturasTab({
               return (
                 <Fragment key={row.DocEntry}>
                   <tr
-                    className="cursor-pointer hover:bg-slate-50"
+                    className="cursor-pointer transition hover:bg-slate-100 hover:shadow-[inset_0_0_0_9999px_rgba(15,23,42,0.02)]"
                     onClick={() => onToggle(row.DocEntry)}
                   >
                     <td className="px-3 py-2 font-medium text-slate-900">
@@ -1295,7 +1334,7 @@ function NotasCreditoTab({ rows }: { rows: SalesCreditNoteRow[] }) {
               return (
                 <Fragment key={row.DocEntry}>
                   <tr
-                    className="cursor-pointer hover:bg-slate-50"
+                    className="cursor-pointer transition hover:bg-slate-100 hover:shadow-[inset_0_0_0_9999px_rgba(15,23,42,0.02)]"
                     onClick={() =>
                       setExpandedRows((current) => ({
                         ...current,

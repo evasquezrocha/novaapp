@@ -1,11 +1,14 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   SAP_COMPANY_OPTIONS,
+  isSapCompanyKey,
+  resolveSapCompanyKeyFromEmpresa,
   type SapCompanyKey,
 } from "@/lib/company-config";
+import { setActiveSapCompany } from "@/lib/company-session";
 
 export function CompanySwitcher({
   currentCompanyKey,
@@ -13,32 +16,42 @@ export function CompanySwitcher({
   currentCompanyKey: SapCompanyKey;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  const companyParam = searchParams.get("company")?.trim();
+  const empresaParam = searchParams.get("empresa")?.trim();
+  const routeCompanyKey = companyParam
+    ? isSapCompanyKey(companyParam)
+      ? companyParam
+      : resolveSapCompanyKeyFromEmpresa(companyParam)
+    : empresaParam
+      ? resolveSapCompanyKeyFromEmpresa(empresaParam)
+      : null;
+  const activeCompanyKey = routeCompanyKey ?? currentCompanyKey;
+
   async function selectCompany(nextCompanyKey: SapCompanyKey) {
-    if (nextCompanyKey === currentCompanyKey || pending) {
+    if (nextCompanyKey === activeCompanyKey || pending) {
       return;
     }
 
     setError(null);
 
     try {
-      const response = await fetch("/api/configuracion/empresa", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ company: nextCompanyKey }),
-      });
-
-      const payload = (await response.json()) as { error?: string };
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "No fue posible cambiar la empresa.");
-      }
+      await setActiveSapCompany(nextCompanyKey);
 
       startTransition(() => {
+        if (routeCompanyKey) {
+          const nextParams = new URLSearchParams(searchParams.toString());
+          nextParams.set("company", nextCompanyKey);
+          nextParams.delete("empresa");
+
+          const nextQuery = nextParams.toString();
+          router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+        }
+
         router.refresh();
       });
     } catch (selectError) {
@@ -54,7 +67,7 @@ export function CompanySwitcher({
     <div className="space-y-3">
       <div className="grid gap-2 sm:grid-cols-2">
         {SAP_COMPANY_OPTIONS.map((company) => {
-          const selected = company.key === currentCompanyKey;
+          const selected = company.key === activeCompanyKey;
 
           return (
             <button
@@ -80,7 +93,6 @@ export function CompanySwitcher({
           );
         })}
       </div>
-
       {error ? (
         <p className="rounded-xl border border-rose-200/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
           {error}

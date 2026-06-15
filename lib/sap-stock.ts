@@ -654,8 +654,9 @@ export async function getOpenPurchaseOrdersByItemCode(
 
 export async function getProjectBudgetByOtn(
   otn: string,
+  companyKey?: SapCompanyKey | null,
 ): Promise<ProjectBudgetRow | null> {
-  const pool = await getSapPool();
+  const pool = companyKey ? await getSapPoolForCompany(companyKey) : await getSapPool();
 
   const result = await pool
     .request()
@@ -994,8 +995,9 @@ export async function getServiciosUtilizadosByCc(
 
 export async function getMaterialesDevueltosByOtn(
   otn: string,
+  companyKey?: SapCompanyKey | null,
 ): Promise<MaterialesDevueltosResult> {
-  const pool = await getSapPool();
+  const pool = companyKey ? await getSapPoolForCompany(companyKey) : await getSapPool();
 
   const [totalResult, detailResult] = await Promise.all([
     pool.request().input("otn", otn).query<{ MATDEV: number }>(`
@@ -1031,8 +1033,9 @@ export async function getMaterialesDevueltosByOtn(
 
 export async function getServiciosSinOcByOtn(
   otn: string,
+  companyKey?: SapCompanyKey | null,
 ): Promise<ServiciosSinOcResult> {
-  const pool = await getSapPool();
+  const pool = companyKey ? await getSapPoolForCompany(companyKey) : await getSapPool();
 
   const [totalResult, detailResult] = await Promise.all([
     pool.request().input("otn", otn).query<{ SERVUTISINOC: number }>(`
@@ -1072,8 +1075,9 @@ export async function getServiciosSinOcByOtn(
 
 export async function getServiciosUtilizadosByOtn(
   otn: string,
+  companyKey?: SapCompanyKey | null,
 ): Promise<ServiciosUtilizadosResult> {
-  const pool = await getSapPool();
+  const pool = companyKey ? await getSapPoolForCompany(companyKey) : await getSapPool();
 
   const [totalResult, detailResult] = await Promise.all([
     pool.request().input("otn", otn).query<{ SERVUTI: number }>(`
@@ -1185,8 +1189,11 @@ export async function getNcServiciosByCc(
   };
 }
 
-export async function getNcServiciosByOtn(otn: string): Promise<NcServiciosResult> {
-  const pool = await getSapPool();
+export async function getNcServiciosByOtn(
+  otn: string,
+  companyKey?: SapCompanyKey | null,
+): Promise<NcServiciosResult> {
+  const pool = companyKey ? await getSapPoolForCompany(companyKey) : await getSapPool();
 
   const [totalResult, detailResult] = await Promise.all([
     pool.request().input("otn", otn).query<{ SERVNC: number }>(`
@@ -1284,8 +1291,9 @@ export async function getSalesCreditNotesByOtn(
 
 export async function getAsientosDirectosByOtn(
   otn: string,
+  companyKey?: SapCompanyKey | null,
 ): Promise<AsientosDirectosResult> {
-  const pool = await getSapPool();
+  const pool = companyKey ? await getSapPoolForCompany(companyKey) : await getSapPool();
 
   const [totalResult, detailResult] = await Promise.all([
     pool.request().query<{ SALDO: number }>(`
@@ -1339,8 +1347,9 @@ export async function getAsientosDirectosByOtn(
 
 export async function getFondosRendidosByOtn(
   otn: string,
+  companyKey?: SapCompanyKey | null,
 ): Promise<FondosRendidosResult> {
-  const pool = await getSapPool();
+  const pool = companyKey ? await getSapPoolForCompany(companyKey) : await getSapPool();
 
   const result = await pool.request().query<FondosRendidosRow>(`
     SELECT

@@ -3,6 +3,8 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { formatDateDdMmYyyy } from "@/lib/date-format";
+import { resolveSapCompanyKeyFromEmpresa } from "@/lib/company-config";
+import { setActiveSapCompany } from "@/lib/company-session";
 import type { SistemaOtnRow } from "@/lib/sistema-otn-sql";
 
 type FormState = {
@@ -97,6 +99,25 @@ const TABLE_COLUMNS: Array<{
 
 function fieldClassName() {
   return "w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100";
+}
+
+function PencilIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <path d="M12.5 5.5h0L18.5 11.5l-8.5 8.5H4v-6z" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M14 7l3 3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ExternalLinkIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.8">
+      <path d="M14 5h5v5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M10 14 19 5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M19 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 }
 
 function toInputValue(value: string | null | undefined) {
@@ -462,6 +483,24 @@ export function SistemaOtnManager({ initialRows }: { initialRows: SistemaOtnRow[
       Ruta: toInputValue(row.Ruta),
     });
     setError(null);
+  }
+
+  function openDisponibleOtn(row: SistemaOtnRow) {
+    const companyKey = resolveSapCompanyKeyFromEmpresa(row.Empresa);
+    void (async () => {
+      try {
+        await setActiveSapCompany(companyKey);
+        router.push(
+          `/produccion/disponible-otn?otn=${encodeURIComponent(row.OTN)}&company=${encodeURIComponent(companyKey)}`,
+        );
+      } catch (error) {
+        setError(
+          error instanceof Error
+            ? error.message
+            : "No fue posible cambiar la empresa antes de abrir Disponible OTN.",
+        );
+      }
+    })();
   }
 
   async function refreshRows() {
@@ -875,7 +914,7 @@ export function SistemaOtnManager({ initialRows }: { initialRows: SistemaOtnRow[
       ) : null}
 
       <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-[0_18px_50px_-28px_rgba(15,23,42,0.55)]">
-        <div className="border-b border-slate-200 bg-gradient-to-r from-slate-950 via-slate-900 to-cyan-950 px-5 py-5 text-white">
+        <div className="border-b border-slate-200 bg-gradient-to-r from-slate-950 via-slate-900 to-cyan-950 px-5 py-5 text-white shadow-[0_10px_30px_-20px_rgba(15,23,42,0.9)]">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="max-w-2xl">
               <div className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.3em] text-cyan-100">
@@ -947,9 +986,9 @@ export function SistemaOtnManager({ initialRows }: { initialRows: SistemaOtnRow[
             />
           </div>
         </div>
-        <div className="overflow-x-auto">
+        <div className="min-h-0 max-h-[calc(100dvh-18rem)] overflow-y-auto overflow-x-auto">
           <table className="min-w-[2200px] divide-y divide-slate-200 text-left text-sm">
-            <thead className="bg-slate-50 text-slate-700">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-slate-700">
               <tr>
                 {TABLE_COLUMNS.map((column) => (
                   <th key={column.key} className="px-4 py-3 font-semibold">
@@ -1007,7 +1046,14 @@ export function SistemaOtnManager({ initialRows }: { initialRows: SistemaOtnRow[
                   const active = row.Id === selectedId;
 
                   return (
-                    <tr key={row.Id} className={active ? "bg-cyan-50/40" : "hover:bg-slate-50"}>
+                    <tr
+                      key={row.Id}
+                      className={
+                        active
+                          ? "bg-cyan-50/60"
+                          : "transition hover:bg-slate-100 hover:shadow-[inset_0_0_0_9999px_rgba(15,23,42,0.02)]"
+                      }
+                    >
                       <td className="px-4 py-3 text-slate-700">{row.Empresa ?? "-"}</td>
                       <td className="px-4 py-3 font-semibold text-slate-900">
                         <button
@@ -1063,13 +1109,24 @@ export function SistemaOtnManager({ initialRows }: { initialRows: SistemaOtnRow[
                         {formatCurrency(row.TotalPendiente)}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openDisponibleOtn(row)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-cyan-300 bg-cyan-50 text-cyan-900 transition hover:bg-cyan-100"
+                            title="Ir a Disponible OTN"
+                            aria-label="Ir a Disponible OTN"
+                          >
+                            <ExternalLinkIcon />
+                          </button>
                           <button
                             type="button"
                             onClick={() => openEditForm(row)}
-                            className="rounded-full border border-cyan-300 bg-cyan-50 px-3 py-2 text-xs font-semibold text-cyan-900 transition hover:bg-cyan-100"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-cyan-300 bg-cyan-50 text-cyan-900 transition hover:bg-cyan-100"
+                            title="Editar OTN"
+                            aria-label="Editar OTN"
                           >
-                            Editar
+                            <PencilIcon />
                           </button>
                         </div>
                       </td>

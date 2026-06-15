@@ -16,6 +16,7 @@ export type PerfSample = {
   source: "operation" | "route";
   label: string;
   durationMs: number;
+  status: number | null;
   details: string | null;
   success: boolean;
   recordedAt: string;
@@ -26,10 +27,34 @@ export type PerfSummaryRow = {
   label: string;
   count: number;
   errorCount: number;
+  errorRate: number;
   averageMs: number;
   maxMs: number;
   lastMs: number;
   lastRecordedAt: string;
+};
+
+export type PerfTotals = {
+  sampleCount: number;
+  routeCount: number;
+  operationCount: number;
+  successCount: number;
+  errorCount: number;
+  errorRate: number;
+  averageMs: number;
+  maxMs: number;
+  slowestSample: PerfSample | null;
+  latestSample: PerfSample | null;
+};
+
+export type PerfSnapshot = {
+  capturedAt: string;
+  sampleLimit: number;
+  samples: PerfSample[];
+  summary: PerfSummaryRow[];
+  totals: PerfTotals;
+  slowestSamples: PerfSample[];
+  recentErrors: PerfSample[];
 };
 
 type PerfStore = {
@@ -88,8 +113,8 @@ function recordSample(input: Omit<PerfSample, "id" | "recordedAt">) {
   }
 }
 
-function buildRouteDetails(route: string, entries: ServerTimingEntry[]) {
-  return `${route} | ${entries
+function buildRouteDetails(route: string, entries: ServerTimingEntry[], status: number) {
+  return `${route} | status=${status} | ${entries
     .map((entry) => `${entry.label}=${formatDuration(entry.duration)}ms`)
     .join(" | ")}`;
 }
@@ -109,6 +134,7 @@ export async function measureAsync<T>(
       source: "operation",
       label,
       durationMs: duration,
+      status: null,
       details: options?.details ?? null,
       success: true,
     });
@@ -125,6 +151,7 @@ export async function measureAsync<T>(
       source: "operation",
       label,
       durationMs: duration,
+      status: null,
       details: options?.details ?? null,
       success: false,
     });
@@ -162,8 +189,9 @@ export function createServerTimingContext(route: string) {
           source: "route",
           label: route,
           durationMs: totalEntry.duration,
-          details: buildRouteDetails(route, entries),
-          success: true,
+          status: response.status,
+          details: buildRouteDetails(route, entries, response.status),
+          success: response.ok,
         });
       }
 
@@ -186,8 +214,29 @@ export function createServerTimingContext(route: string) {
 export function getPerformanceSnapshot() {
   const samples = [...getPerfStore().samples];
   const summaryMap = new Map<string, PerfSummaryRow>();
+  let successCount = 0;
+  let errorCount = 0;
+  let routeCount = 0;
+  let operationCount = 0;
+  let totalDuration = 0;
+  let maxDuration = 0;
 
   for (const sample of samples) {
+    totalDuration += sample.durationMs;
+    maxDuration = Math.max(maxDuration, sample.durationMs);
+
+    if (sample.source === "route") {
+      routeCount += 1;
+    } else {
+      operationCount += 1;
+    }
+
+    if (sample.success) {
+      successCount += 1;
+    } else {
+      errorCount += 1;
+    }
+
     const key = `${sample.source}::${sample.label}`;
     const current = summaryMap.get(key);
 
@@ -197,6 +246,7 @@ export function getPerformanceSnapshot() {
         label: sample.label,
         count: 1,
         errorCount: sample.success ? 0 : 1,
+        errorRate: sample.success ? 0 : 1,
         averageMs: sample.durationMs,
         maxMs: sample.durationMs,
         lastMs: sample.durationMs,
@@ -207,6 +257,7 @@ export function getPerformanceSnapshot() {
 
     current.count += 1;
     current.errorCount += sample.success ? 0 : 1;
+    current.errorRate = current.errorCount / current.count;
     current.averageMs =
       (current.averageMs * (current.count - 1) + sample.durationMs) / current.count;
     current.maxMs = Math.max(current.maxMs, sample.durationMs);
@@ -219,13 +270,34 @@ export function getPerformanceSnapshot() {
       return b.averageMs - a.averageMs;
     }
 
+    if (b.errorRate !== a.errorRate) {
+      return b.errorRate - a.errorRate;
+    }
+
     return b.count - a.count;
   });
+  const slowestSamples = [...samples].sort((a, b) => b.durationMs - a.durationMs).slice(0, 8);
+  const recentErrors = samples.filter((sample) => !sample.success).slice(0, 8);
+  const latestSample = samples[0] ?? null;
 
   return {
     capturedAt: new Date().toISOString(),
     sampleLimit: PERF_SAMPLE_LIMIT,
     samples,
     summary,
+    totals: {
+      sampleCount: samples.length,
+      routeCount,
+      operationCount,
+      successCount,
+      errorCount,
+      errorRate: samples.length === 0 ? 0 : errorCount / samples.length,
+      averageMs: samples.length === 0 ? 0 : totalDuration / samples.length,
+      maxMs: maxDuration,
+      slowestSample: slowestSamples[0] ?? null,
+      latestSample,
+    },
+    slowestSamples,
+    recentErrors,
   };
 }

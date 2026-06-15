@@ -1,7 +1,6 @@
 import sql from "mssql";
 import { createHash, randomBytes, pbkdf2, timingSafeEqual } from "node:crypto";
 import { cache } from "react";
-import { ensureDatabaseSchema } from "@/lib/db-schema";
 import { measureAsync } from "@/lib/server-performance";
 import { findUsuarioForLoginByUsuario } from "@/lib/usuarios-sql";
 
@@ -76,8 +75,6 @@ function buildConfig(): AuthEnv {
 }
 
 export async function getAuthPool() {
-  await ensureDatabaseSchema();
-
   if (!global.__authPool) {
     global.__authPool = sql.connect(buildConfig());
   }
@@ -129,15 +126,6 @@ function toSqlHex(buffer: Buffer) {
   return `0x${buffer.toString("hex")}`;
 }
 
-function isMissingObjectError(error: unknown) {
-  return (
-    error instanceof Error &&
-    "number" in error &&
-    typeof (error as { number?: unknown }).number === "number" &&
-    (error as { number: number }).number === 208
-  );
-}
-
 export async function authenticateUser(usuario: string, password: string) {
   const user = await findUsuarioForLoginByUsuario(usuario);
 
@@ -159,37 +147,23 @@ export async function authenticateUser(usuario: string, password: string) {
 }
 
 export async function createSession(user: SessionUser) {
-  const run = async () => {
-    const pool = await getAuthPool();
-    const token = randomBytes(32).toString("base64url");
-    const tokenHash = hashToken(token);
+  const pool = await getAuthPool();
+  const token = randomBytes(32).toString("base64url");
+  const tokenHash = hashToken(token);
 
-    await pool
-      .request()
-      .query(`
-        INSERT INTO dbo.Sesiones
-          (TokenHash, UsuarioId, ExpiraEn, UltimoAccesoEn)
-        VALUES
-          (${toSqlHex(tokenHash)}, ${user.Id}, DATEADD(DAY, ${SESSION_DAYS}, SYSUTCDATETIME()), SYSUTCDATETIME())
-      `);
+  await pool
+    .request()
+    .query(`
+      INSERT INTO dbo.Sesiones
+        (TokenHash, UsuarioId, ExpiraEn, UltimoAccesoEn)
+      VALUES
+        (${toSqlHex(tokenHash)}, ${user.Id}, DATEADD(DAY, ${SESSION_DAYS}, SYSUTCDATETIME()), SYSUTCDATETIME())
+    `);
 
-    return {
-      token,
-      expiresAt: new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000),
-    };
+  return {
+    token,
+    expiresAt: new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000),
   };
-
-  try {
-    return await run();
-  } catch (error) {
-    if (!isMissingObjectError(error)) {
-      throw error;
-    }
-
-    global.__authPool = undefined;
-    await ensureDatabaseSchema();
-    return await run();
-  }
 }
 
 async function getSessionUserByTokenUncached(token: string) {
@@ -215,24 +189,10 @@ async function getSessionUserByTokenUncached(token: string) {
       `);
   };
 
-  try {
-    const result = await measureAsync("auth.getSessionUserByToken", query, {
-      slowMs: 100,
-    });
-    return result.recordset[0] ?? null;
-  } catch (error) {
-    if (!isMissingObjectError(error)) {
-      throw error;
-    }
-
-    global.__authPool = undefined;
-    await ensureDatabaseSchema();
-
-    const result = await measureAsync("auth.getSessionUserByToken.retry", query, {
-      slowMs: 100,
-    });
-    return result.recordset[0] ?? null;
-  }
+  const result = await measureAsync("auth.getSessionUserByToken", query, {
+    slowMs: 100,
+  });
+  return result.recordset[0] ?? null;
 }
 
 const getSessionUserByTokenCached = cache(async (token: string) => {
@@ -244,94 +204,51 @@ export async function getSessionUserByToken(token: string) {
 }
 
 export async function revokeSession(token: string) {
-  const run = async () => {
-    const pool = await getAuthPool();
-    const tokenHash = hashToken(token);
+  const pool = await getAuthPool();
+  const tokenHash = hashToken(token);
 
-    await pool
-      .request()
-      .query(`
-        UPDATE dbo.Sesiones
-        SET RevocadoEn = SYSUTCDATETIME()
-        WHERE TokenHash = ${toSqlHex(tokenHash)}
-      `);
-  };
-
-  try {
-    await run();
-  } catch (error) {
-    if (!isMissingObjectError(error)) {
-      throw error;
-    }
-
-    global.__authPool = undefined;
-    await ensureDatabaseSchema();
-    await run();
-  }
+  await pool
+    .request()
+    .query(`
+      UPDATE dbo.Sesiones
+      SET RevocadoEn = SYSUTCDATETIME()
+      WHERE TokenHash = ${toSqlHex(tokenHash)}
+    `);
 }
 
 export async function recordAccessLog(user: SessionUser, ipAddress: string | null) {
-  const run = async () => {
-    const pool = await getAuthPool();
-    const usuario = user.Usuario.replace(/'/g, "''");
-    const nombre = user.Nombre.replace(/'/g, "''");
-    const direccionIp = (ipAddress ?? "").replace(/'/g, "''");
+  const pool = await getAuthPool();
+  const usuario = user.Usuario.replace(/'/g, "''");
+  const nombre = user.Nombre.replace(/'/g, "''");
+  const direccionIp = (ipAddress ?? "").replace(/'/g, "''");
 
-    await pool
-      .request()
-      .query(`
-        INSERT INTO dbo.AccesosLog
-          (UsuarioId, Usuario, Nombre, DireccionIp)
-        VALUES
-          (${user.Id}, N'${usuario}', N'${nombre}', ${ipAddress ? `N'${direccionIp}'` : "NULL"})
-      `);
-  };
-
-  try {
-    await run();
-  } catch (error) {
-    if (!isMissingObjectError(error)) {
-      throw error;
-    }
-
-    global.__authPool = undefined;
-    await ensureDatabaseSchema();
-    await run();
-  }
+  await pool
+    .request()
+    .query(`
+      INSERT INTO dbo.AccesosLog
+        (UsuarioId, Usuario, Nombre, DireccionIp)
+      VALUES
+        (${user.Id}, N'${usuario}', N'${nombre}', ${ipAddress ? `N'${direccionIp}'` : "NULL"})
+    `);
 }
 
 export async function listAccessLogs(top = 50): Promise<AccessLogRow[]> {
-  const query = async () => {
-    const pool = await getAuthPool();
-    const safeTop = Math.max(1, Math.min(500, Math.trunc(top) || 50));
+  const pool = await getAuthPool();
+  const safeTop = Math.max(1, Math.min(500, Math.trunc(top) || 50));
 
-    return pool
-      .request()
-      .query<AccessLogRow>(`
-        SELECT TOP (${safeTop})
-          Id,
-          UsuarioId,
-          Usuario,
-          Nombre,
-          DireccionIp,
-          CONVERT(varchar(19), AccedidoEn, 120) AS AccedidoEn
-        FROM dbo.AccesosLog
-        ORDER BY AccedidoEn DESC, Id DESC
-      `);
-  };
+  const result = await pool
+    .request()
+    .query<AccessLogRow>(`
+      SELECT TOP (${safeTop})
+        Id,
+        UsuarioId,
+        Usuario,
+        Nombre,
+        DireccionIp,
+        CONVERT(varchar(19), AccedidoEn, 120) AS AccedidoEn
+      FROM dbo.AccesosLog
+      ORDER BY AccedidoEn DESC, Id DESC
+    `);
 
-  try {
-    const result = await query();
-    return result.recordset;
-  } catch (error) {
-    if (!isMissingObjectError(error)) {
-      throw error;
-    }
-
-    global.__authPool = undefined;
-    await ensureDatabaseSchema();
-
-    const result = await query();
-    return result.recordset;
-  }
+  return result.recordset;
 }
