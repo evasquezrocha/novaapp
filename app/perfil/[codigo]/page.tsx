@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { notFound } from "next/navigation";
-import { getPerfilTpRowByCodigo } from "@/lib/perfiles-tp-sql";
+import { getPerfilTpPublicRowByCodigo } from "@/lib/perfiles-tp-sql";
 
 export const dynamic = "force-dynamic";
 
@@ -236,7 +236,7 @@ export default async function PerfilCodigoPage({
   params: Promise<{ codigo: string }>;
 }) {
   const { codigo } = await params;
-  const perfil = await getPerfilTpRowByCodigo(codigo);
+  const perfil = await getPerfilTpPublicRowByCodigo(codigo);
 
   if (!perfil) {
     notFound();

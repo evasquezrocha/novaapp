@@ -4,6 +4,10 @@ import { ensureDatabaseSchema } from "@/lib/db-schema";
 import { getAuthPool } from "@/lib/auth-sql";
 import { measureAsync } from "@/lib/server-performance";
 
+const globalForPerfilesTp = globalThis as typeof globalThis & {
+  __dbPerfilesTpInit?: Promise<void>;
+};
+
 export type PerfilTpInput = {
   Empresa: string;
   Logo: string | null;
@@ -24,6 +28,23 @@ export type PerfilTpRow = PerfilTpInput & {
   ActualizadoEn: string;
 };
 
+export type PerfilTpSummaryRow = Pick<PerfilTpRow, "Id" | "Empresa" | "Nombre" | "CodigoAleatorio">;
+
+export type PerfilTpPublicRow = Pick<
+  PerfilTpRow,
+  | "Empresa"
+  | "Logo"
+  | "Nombre"
+  | "Contacto"
+  | "WhatsApp"
+  | "Telefono"
+  | "Web"
+  | "Instagram"
+  | "LinkedIn"
+  | "Transferencia"
+  | "CodigoAleatorio"
+>;
+
 function normalizeText(value: string | null | undefined) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
@@ -42,10 +63,23 @@ export function generatePerfilTpCodigoAleatorio() {
 }
 
 async function getPool() {
-  await ensureDatabaseSchema();
-  const pool = await getAuthPool();
-  await ensurePerfilTpColumns(pool);
-  return pool;
+  await ensurePerfilesTpReady();
+  return getAuthPool();
+}
+
+async function ensurePerfilesTpReady() {
+  if (!globalForPerfilesTp.__dbPerfilesTpInit) {
+    globalForPerfilesTp.__dbPerfilesTpInit = (async () => {
+      await ensureDatabaseSchema();
+      const pool = await getAuthPool();
+      await ensurePerfilTpColumns(pool);
+    })().catch((error) => {
+      globalForPerfilesTp.__dbPerfilesTpInit = undefined;
+      throw error;
+    });
+  }
+
+  await globalForPerfilesTp.__dbPerfilesTpInit;
 }
 
 async function ensurePerfilTpColumns(pool: Awaited<ReturnType<typeof getAuthPool>>) {
@@ -146,7 +180,7 @@ async function tableExists(pool: sql.ConnectionPool, tableName: string) {
   return Boolean(result.recordset[0]?.Exists);
 }
 
-function buildSelect() {
+function buildAdminSelect() {
   return `
     SELECT
       Id,
@@ -167,11 +201,52 @@ function buildSelect() {
   `;
 }
 
+function buildSummarySelect() {
+  return `
+    SELECT
+      Id,
+      Empresa,
+      Nombre,
+      CodigoAleatorio
+    FROM dbo.PerfilesTP
+  `;
+}
+
+function buildPublicProfileSelect() {
+  return `
+    SELECT
+      Empresa,
+      Logo,
+      Nombre,
+      Contacto,
+      WhatsApp,
+      Telefono,
+      Web,
+      Instagram,
+      LinkedIn,
+      Transferencia,
+      CodigoAleatorio
+    FROM dbo.PerfilesTP
+  `;
+}
+
 export async function listPerfilTpRows(): Promise<PerfilTpRow[]> {
   return measureAsync("perfiles-tp.list", async () => {
     const pool = await getPool();
     const result = await pool.request().query<PerfilTpRow>(`
-      ${buildSelect()}
+      ${buildAdminSelect()}
+      ORDER BY CreadoEn DESC, Id DESC
+    `);
+
+    return result.recordset;
+  });
+}
+
+export async function listPerfilTpPublicRows(): Promise<PerfilTpSummaryRow[]> {
+  return measureAsync("perfiles-tp.list-public", async () => {
+    const pool = await getPool();
+    const result = await pool.request().query<PerfilTpSummaryRow>(`
+      ${buildSummarySelect()}
       ORDER BY CreadoEn DESC, Id DESC
     `);
 
@@ -185,7 +260,7 @@ export async function getPerfilTpRowById(id: number): Promise<PerfilTpRow | null
     .request()
     .input("id", sql.Int, id)
     .query<PerfilTpRow>(`
-      ${buildSelect()}
+      ${buildAdminSelect()}
       WHERE Id = @id
     `);
 
@@ -196,7 +271,20 @@ export async function getPerfilTpRowByCodigo(codigoAleatorio: string): Promise<P
   const pool = await getPool();
   const safeCodigo = codigoAleatorio.trim().replace(/'/g, "''");
   const result = await pool.request().query<PerfilTpRow>(`
-      ${buildSelect()}
+      ${buildAdminSelect()}
+      WHERE CodigoAleatorio = N'${safeCodigo}'
+    `);
+
+  return result.recordset[0] ?? null;
+}
+
+export async function getPerfilTpPublicRowByCodigo(
+  codigoAleatorio: string,
+): Promise<PerfilTpPublicRow | null> {
+  const pool = await getPool();
+  const safeCodigo = codigoAleatorio.trim().replace(/'/g, "''");
+  const result = await pool.request().query<PerfilTpPublicRow>(`
+      ${buildPublicProfileSelect()}
       WHERE CodigoAleatorio = N'${safeCodigo}'
     `);
 

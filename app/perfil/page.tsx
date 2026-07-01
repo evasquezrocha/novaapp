@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { listPerfilTpRows } from "@/lib/perfiles-tp-sql";
+import { listPerfilTpPublicRows } from "@/lib/perfiles-tp-sql";
 
 export const dynamic = "force-dynamic";
 
 export default async function PerfilPage() {
-  const perfiles = await listPerfilTpRows();
+  const perfiles = await listPerfilTpPublicRows();
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-white via-[#fff7ed] to-[#fef3c7] px-6 py-10">
@@ -44,4 +44,3 @@ export default async function PerfilPage() {
     </main>
   );
 }
-
