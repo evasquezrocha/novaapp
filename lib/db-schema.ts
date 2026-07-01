@@ -274,6 +274,16 @@ AND EXISTS (
     AND max_length <> -1
 )
 BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE object_id = OBJECT_ID('dbo.PerfilesTP')
+      AND name = 'IX_PerfilesTP_CreadoEn_Id'
+  )
+  BEGIN
+    DROP INDEX IX_PerfilesTP_CreadoEn_Id ON dbo.PerfilesTP;
+  END;
+
   IF COL_LENGTH('dbo.PerfilesTP', 'Empresa') IS NOT NULL
   BEGIN
     ALTER TABLE dbo.PerfilesTP
@@ -332,6 +342,18 @@ BEGIN
   BEGIN
     ALTER TABLE dbo.PerfilesTP
       ALTER COLUMN Transferencia NVARCHAR(MAX) NULL;
+  END;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE object_id = OBJECT_ID('dbo.PerfilesTP')
+      AND name = 'IX_PerfilesTP_CreadoEn_Id'
+  )
+  BEGIN
+    CREATE INDEX IX_PerfilesTP_CreadoEn_Id
+      ON dbo.PerfilesTP(CreadoEn DESC, Id DESC)
+      INCLUDE (Empresa, Nombre, CodigoAleatorio);
   END;
 END;
 `;
