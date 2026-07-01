@@ -25,6 +25,7 @@ declare global {
   var __dbSchemaSistemaOtnInit: Promise<void> | undefined;
   var __dbSchemaSistemaOtnAprobacionesInit: Promise<void> | undefined;
   var __dbSchemaSistemaOtnEntregasManualesInit: Promise<void> | undefined;
+  var __dbSchemaCtSupervisoresInit: Promise<void> | undefined;
 }
 
 function buildConfig(): DbEnv {
@@ -166,6 +167,22 @@ BEGIN
   CREATE INDEX IX_SistemaOtnEntregasManuales_OTN_FechaEntrega_Id
     ON dbo.SistemaOtnEntregasManuales(OTN, FechaEntrega DESC, Id DESC)
     INCLUDE (ValorEntrega, ReferenciaEntrega, CreadoEn, ActualizadoEn);
+END;
+`;
+
+const ENSURE_CT_SUPERVISORES_COLUMNS_SQL = `
+IF OBJECT_ID('dbo.CtSupervisores', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.CtSupervisores', 'Correlativo') IS NULL
+BEGIN
+  ALTER TABLE dbo.CtSupervisores
+    ADD Correlativo NVARCHAR(50) NOT NULL CONSTRAINT DF_CtSupervisores_Correlativo DEFAULT ('');
+END;
+
+IF OBJECT_ID('dbo.CtSupervisores', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.CtSupervisores', 'Estado') IS NULL
+BEGIN
+  ALTER TABLE dbo.CtSupervisores
+    ADD Estado NVARCHAR(50) NOT NULL CONSTRAINT DF_CtSupervisores_Estado DEFAULT (N'Ingresado');
 END;
 `;
 
@@ -430,6 +447,19 @@ async function ensureActivosFijosSchema(pool: sql.ConnectionPool) {
   }
 }
 
+async function ensureCtSupervisoresSchema(pool: sql.ConnectionPool) {
+  const hasCtSupervisores = await tableExists(pool, "dbo.CtSupervisores");
+
+  if (!hasCtSupervisores) {
+    await runSqlFile(pool, "sql/create-ct-supervisores-table.sql");
+    return;
+  }
+
+  for (const batch of splitSqlBatches(ENSURE_CT_SUPERVISORES_COLUMNS_SQL)) {
+    await pool.request().batch(batch);
+  }
+}
+
 export async function ensureDatabaseSchema() {
   if (!global.__dbSchemaInit) {
     global.__dbSchemaInit = (async () => {
@@ -544,4 +574,18 @@ export async function ensureDatabaseSchema() {
   }
 
   await global.__dbSchemaSistemaOtnEntregasManualesInit;
+
+  if (!global.__dbSchemaCtSupervisoresInit) {
+    global.__dbSchemaCtSupervisoresInit = (async () => {
+      const pool = await new sql.ConnectionPool(buildConfig()).connect();
+
+      try {
+        await ensureCtSupervisoresSchema(pool);
+      } finally {
+        await pool.close();
+      }
+    })();
+  }
+
+  await global.__dbSchemaCtSupervisoresInit;
 }
