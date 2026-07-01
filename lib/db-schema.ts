@@ -26,6 +26,7 @@ declare global {
   var __dbSchemaSistemaOtnAprobacionesInit: Promise<void> | undefined;
   var __dbSchemaSistemaOtnEntregasManualesInit: Promise<void> | undefined;
   var __dbSchemaCtSupervisoresInit: Promise<void> | undefined;
+  var __dbSchemaPerfilesTpInit: Promise<void> | undefined;
 }
 
 function buildConfig(): DbEnv {
@@ -183,6 +184,155 @@ AND COL_LENGTH('dbo.CtSupervisores', 'Estado') IS NULL
 BEGIN
   ALTER TABLE dbo.CtSupervisores
     ADD Estado NVARCHAR(50) NOT NULL CONSTRAINT DF_CtSupervisores_Estado DEFAULT (N'Ingresado');
+END;
+`;
+
+const ENSURE_PERFILES_TP_COLUMNS_SQL = `
+IF OBJECT_ID('dbo.PerfilesTP', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.PerfilesTP', 'Empresa') IS NULL
+BEGIN
+  ALTER TABLE dbo.PerfilesTP
+    ADD Empresa NVARCHAR(MAX) NULL;
+END;
+
+IF OBJECT_ID('dbo.PerfilesTP', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.PerfilesTP', 'Logo') IS NULL
+BEGIN
+  ALTER TABLE dbo.PerfilesTP
+    ADD Logo NVARCHAR(MAX) NULL;
+END;
+
+IF OBJECT_ID('dbo.PerfilesTP', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.PerfilesTP', 'Nombre') IS NULL
+BEGIN
+  ALTER TABLE dbo.PerfilesTP
+    ADD Nombre NVARCHAR(MAX) NULL;
+END;
+
+IF OBJECT_ID('dbo.PerfilesTP', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.PerfilesTP', 'Contacto') IS NULL
+BEGIN
+  ALTER TABLE dbo.PerfilesTP
+    ADD Contacto NVARCHAR(MAX) NULL;
+END;
+
+IF OBJECT_ID('dbo.PerfilesTP', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.PerfilesTP', 'WhatsApp') IS NULL
+BEGIN
+  ALTER TABLE dbo.PerfilesTP
+    ADD WhatsApp NVARCHAR(MAX) NULL;
+END;
+
+IF OBJECT_ID('dbo.PerfilesTP', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.PerfilesTP', 'Telefono') IS NULL
+BEGIN
+  ALTER TABLE dbo.PerfilesTP
+    ADD Telefono NVARCHAR(MAX) NULL;
+END;
+
+IF OBJECT_ID('dbo.PerfilesTP', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.PerfilesTP', 'Web') IS NULL
+BEGIN
+  ALTER TABLE dbo.PerfilesTP
+    ADD Web NVARCHAR(MAX) NULL;
+END;
+
+IF OBJECT_ID('dbo.PerfilesTP', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.PerfilesTP', 'Instagram') IS NULL
+BEGIN
+  ALTER TABLE dbo.PerfilesTP
+    ADD Instagram NVARCHAR(MAX) NULL;
+END;
+
+IF OBJECT_ID('dbo.PerfilesTP', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.PerfilesTP', 'LinkedIn') IS NULL
+BEGIN
+  ALTER TABLE dbo.PerfilesTP
+    ADD LinkedIn NVARCHAR(MAX) NULL;
+END;
+
+IF OBJECT_ID('dbo.PerfilesTP', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.PerfilesTP', 'Transferencia') IS NULL
+BEGIN
+  ALTER TABLE dbo.PerfilesTP
+    ADD Transferencia NVARCHAR(MAX) NULL;
+END;
+
+IF OBJECT_ID('dbo.PerfilesTP', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.PerfilesTP', 'CodigoAleatorio') IS NULL
+BEGIN
+  ALTER TABLE dbo.PerfilesTP
+    ADD CodigoAleatorio NVARCHAR(50) NULL;
+END;
+
+IF OBJECT_ID('dbo.PerfilesTP', 'U') IS NOT NULL
+AND EXISTS (
+  SELECT 1
+  FROM sys.columns
+  WHERE object_id = OBJECT_ID('dbo.PerfilesTP')
+    AND name IN ('Empresa', 'Logo', 'Nombre', 'Contacto', 'WhatsApp', 'Telefono', 'Web', 'Instagram', 'LinkedIn', 'Transferencia')
+    AND max_length <> -1
+)
+BEGIN
+  IF COL_LENGTH('dbo.PerfilesTP', 'Empresa') IS NOT NULL
+  BEGIN
+    ALTER TABLE dbo.PerfilesTP
+      ALTER COLUMN Empresa NVARCHAR(MAX) NULL;
+  END;
+
+  IF COL_LENGTH('dbo.PerfilesTP', 'Logo') IS NOT NULL
+  BEGIN
+    ALTER TABLE dbo.PerfilesTP
+      ALTER COLUMN Logo NVARCHAR(MAX) NULL;
+  END;
+
+  IF COL_LENGTH('dbo.PerfilesTP', 'Nombre') IS NOT NULL
+  BEGIN
+    ALTER TABLE dbo.PerfilesTP
+      ALTER COLUMN Nombre NVARCHAR(MAX) NULL;
+  END;
+
+  IF COL_LENGTH('dbo.PerfilesTP', 'Contacto') IS NOT NULL
+  BEGIN
+    ALTER TABLE dbo.PerfilesTP
+      ALTER COLUMN Contacto NVARCHAR(MAX) NULL;
+  END;
+
+  IF COL_LENGTH('dbo.PerfilesTP', 'WhatsApp') IS NOT NULL
+  BEGIN
+    ALTER TABLE dbo.PerfilesTP
+      ALTER COLUMN WhatsApp NVARCHAR(MAX) NULL;
+  END;
+
+  IF COL_LENGTH('dbo.PerfilesTP', 'Telefono') IS NOT NULL
+  BEGIN
+    ALTER TABLE dbo.PerfilesTP
+      ALTER COLUMN Telefono NVARCHAR(MAX) NULL;
+  END;
+
+  IF COL_LENGTH('dbo.PerfilesTP', 'Web') IS NOT NULL
+  BEGIN
+    ALTER TABLE dbo.PerfilesTP
+      ALTER COLUMN Web NVARCHAR(MAX) NULL;
+  END;
+
+  IF COL_LENGTH('dbo.PerfilesTP', 'Instagram') IS NOT NULL
+  BEGIN
+    ALTER TABLE dbo.PerfilesTP
+      ALTER COLUMN Instagram NVARCHAR(MAX) NULL;
+  END;
+
+  IF COL_LENGTH('dbo.PerfilesTP', 'LinkedIn') IS NOT NULL
+  BEGIN
+    ALTER TABLE dbo.PerfilesTP
+      ALTER COLUMN LinkedIn NVARCHAR(MAX) NULL;
+  END;
+
+  IF COL_LENGTH('dbo.PerfilesTP', 'Transferencia') IS NOT NULL
+  BEGIN
+    ALTER TABLE dbo.PerfilesTP
+      ALTER COLUMN Transferencia NVARCHAR(MAX) NULL;
+  END;
 END;
 `;
 
@@ -460,6 +610,19 @@ async function ensureCtSupervisoresSchema(pool: sql.ConnectionPool) {
   }
 }
 
+async function ensurePerfilesTpSchema(pool: sql.ConnectionPool) {
+  const hasPerfilesTp = await tableExists(pool, "dbo.PerfilesTP");
+
+  if (!hasPerfilesTp) {
+    await runSqlFile(pool, "sql/create-perfiles-tp-table.sql");
+    return;
+  }
+
+  for (const batch of splitSqlBatches(ENSURE_PERFILES_TP_COLUMNS_SQL)) {
+    await pool.request().batch(batch);
+  }
+}
+
 export async function ensureDatabaseSchema() {
   if (!global.__dbSchemaInit) {
     global.__dbSchemaInit = (async () => {
@@ -588,4 +751,18 @@ export async function ensureDatabaseSchema() {
   }
 
   await global.__dbSchemaCtSupervisoresInit;
+
+  if (!global.__dbSchemaPerfilesTpInit) {
+    global.__dbSchemaPerfilesTpInit = (async () => {
+      const pool = await new sql.ConnectionPool(buildConfig()).connect();
+
+      try {
+        await ensurePerfilesTpSchema(pool);
+      } finally {
+        await pool.close();
+      }
+    })();
+  }
+
+  await global.__dbSchemaPerfilesTpInit;
 }

@@ -1,0 +1,13 @@
+BEGIN:VCARD
+VERSION:3.0
+N:Vásquez Rocha;Eduardo;;;
+FN:Eduardo Vásquez Rocha
+ORG:Novamine;
+TITLE:Gerente de Administración y Finanzas
+TEL;type=CELL;type=VOICE;waid=56969184382:+56 9 6918 4382
+EMAIL;type=INTERNET;type=WORK:eduardo.vasquez@novamine.cl
+item1.ADR;type=HOME:;;Abraham Vallejos 323;Antofagasta;Antofagasta;;Chile
+item1.X-ABADR:cl
+item2.URL:https://www.novsmine.com
+item2.X-ABLabel:_$!<HomePage>!$_
+END:VCARD

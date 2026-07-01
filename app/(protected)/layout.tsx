@@ -45,6 +45,7 @@ export default async function ProtectedLayout({
     canSeeBodega ? "/bodega/stock-actual" : null,
     canSeeBodega ? "/bodega/busqueda-en-oc" : null,
     canSeeAdministracion ? "/administracion/activos-fijos" : null,
+    canSeeAdministracion ? "/administracion/perfiles-tp" : null,
     canSeeUsuarios ? "/usuarios" : null,
     canSeeLog ? "/configuracion/log" : null,
     canSeeMonitoreo ? "/configuracion/monitoreo" : null,
@@ -55,6 +56,7 @@ export default async function ProtectedLayout({
     canSeeSistemaOtn ? "/api/produccion/sistema-otn" : null,
     canSeeBodega ? "/api/bodega/stock-actual" : null,
     canSeeAdministracion ? "/api/administracion/activos-fijos" : null,
+    canSeeAdministracion ? "/api/administracion/perfiles-tp" : null,
   ].filter((value): value is string => Boolean(value));
 
   return (

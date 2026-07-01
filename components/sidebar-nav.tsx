@@ -80,6 +80,7 @@ export function SidebarNav({
   const isImportSistemaOtnActive = pathname.startsWith("/configuracion/importar-sistema-otn");
   const isPermisosActive = pathname.startsWith("/configuracion/permisos");
   const isActivosFijosActive = pathname.startsWith("/administracion/activos-fijos");
+  const isPerfilesTpActive = pathname.startsWith("/administracion/perfiles-tp");
   const isCtSupervisoresActive = pathname.startsWith("/asistencia/ct-supervisores");
 
   const activeSection: SectionKey | null = isUsuariosActive
@@ -88,6 +89,8 @@ export function SidebarNav({
       ? "configuracion"
       : isActivosFijosActive
         ? "administracion"
+        : isPerfilesTpActive
+          ? "administracion"
         : isCtSupervisoresActive
           ? "asistencia"
         : pathname.startsWith("/bodega/")
@@ -159,6 +162,11 @@ export function SidebarNav({
           href: "/administracion/activos-fijos",
           label: "Activos Fijos",
           active: isActivosFijosActive,
+        },
+        {
+          href: "/administracion/perfiles-tp",
+          label: "Perfiles TP",
+          active: isPerfilesTpActive,
         },
       ],
     },
