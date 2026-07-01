@@ -91,14 +91,12 @@ async function ensurePerfilTpColumns(pool: Awaited<ReturnType<typeof getAuthPool
     let attempts = 0;
 
     while (attempts < 10) {
-      const collision = await pool
-        .request()
-        .input("codigo", sql.NVarChar(50), code)
-        .query<{ Exists: number }>(`
-          SELECT CASE WHEN EXISTS (
-            SELECT 1 FROM dbo.PerfilesTP WHERE CodigoAleatorio = @codigo
-          ) THEN 1 ELSE 0 END AS [Exists]
-        `);
+      const safeCode = code.replace(/'/g, "''");
+      const collision = await pool.request().query<{ Exists: number }>(`
+        SELECT CASE WHEN EXISTS (
+          SELECT 1 FROM dbo.PerfilesTP WHERE CodigoAleatorio = N'${safeCode}'
+        ) THEN 1 ELSE 0 END AS [Exists]
+      `);
 
       if (!collision.recordset[0]?.Exists) {
         break;
@@ -108,15 +106,12 @@ async function ensurePerfilTpColumns(pool: Awaited<ReturnType<typeof getAuthPool
       attempts += 1;
     }
 
-    await pool
-      .request()
-      .input("id", sql.Int, row.Id)
-      .input("codigo", sql.NVarChar(50), code)
-      .query(`
-        UPDATE dbo.PerfilesTP
-        SET CodigoAleatorio = @codigo
-        WHERE Id = @id
-      `);
+    const safeCode = code.replace(/'/g, "''");
+    await pool.request().query(`
+      UPDATE dbo.PerfilesTP
+      SET CodigoAleatorio = N'${safeCode}'
+      WHERE Id = ${row.Id}
+    `);
   }
 
   const hasUniqueIndex = await pool
@@ -199,12 +194,10 @@ export async function getPerfilTpRowById(id: number): Promise<PerfilTpRow | null
 
 export async function getPerfilTpRowByCodigo(codigoAleatorio: string): Promise<PerfilTpRow | null> {
   const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("codigo", sql.NVarChar(50), codigoAleatorio.trim())
-    .query<PerfilTpRow>(`
+  const safeCodigo = codigoAleatorio.trim().replace(/'/g, "''");
+  const result = await pool.request().query<PerfilTpRow>(`
       ${buildSelect()}
-      WHERE CodigoAleatorio = @codigo
+      WHERE CodigoAleatorio = N'${safeCodigo}'
     `);
 
   return result.recordset[0] ?? null;
