@@ -143,6 +143,21 @@ BEGIN
 END;
 `;
 
+const ENSURE_USUARIOS_LOGIN_INDEX_SQL = `
+IF OBJECT_ID('dbo.Usuarios', 'U') IS NOT NULL
+AND NOT EXISTS (
+  SELECT 1
+  FROM sys.indexes
+  WHERE object_id = OBJECT_ID('dbo.Usuarios')
+    AND name = 'IX_Usuarios_Usuario_Login'
+)
+BEGIN
+  CREATE INDEX IX_Usuarios_Usuario_Login
+    ON dbo.Usuarios(Usuario)
+    INCLUDE (Nombre, Rol, Activo, PasswordSalt, PasswordHash, Correo);
+END;
+`;
+
 const ENSURE_SISTEMA_OTN_APROBACIONES_INDEX_SQL = `
 IF OBJECT_ID('dbo.SistemaOtnAprobaciones', 'U') IS NOT NULL
 AND NOT EXISTS (
@@ -771,6 +786,10 @@ export async function ensureDatabaseSchema() {
         }
 
         for (const batch of splitSqlBatches(ENSURE_USUARIOS_INDEX_SQL)) {
+          await pool.request().batch(batch);
+        }
+
+        for (const batch of splitSqlBatches(ENSURE_USUARIOS_LOGIN_INDEX_SQL)) {
           await pool.request().batch(batch);
         }
       } finally {

@@ -15,6 +15,34 @@ function shouldTrackRequest(input: RequestInfo | URL, init?: RequestInit) {
     return false;
   }
 
+  const headerValue = (headers: HeadersInit | undefined, name: string) => {
+    if (!headers) {
+      return null;
+    }
+
+    if (headers instanceof Headers) {
+      return headers.get(name);
+    }
+
+    if (Array.isArray(headers)) {
+      const match = headers.find(([key]) => key.toLowerCase() === name.toLowerCase());
+      return match?.[1] ?? null;
+    }
+
+    const record = headers as Record<string, string | undefined>;
+    const entry = Object.entries(record).find(([key]) => key.toLowerCase() === name.toLowerCase());
+    return entry?.[1] ?? null;
+  };
+
+  const silentRequest =
+    headerValue(init?.headers, "x-nova-silent") === "1" ||
+    (input instanceof Request &&
+      input.headers.get("x-nova-silent") === "1");
+
+  if (silentRequest) {
+    return false;
+  }
+
   let url: URL;
   try {
     url = new URL(

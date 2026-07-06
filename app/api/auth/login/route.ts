@@ -81,7 +81,7 @@ export async function POST(request: Request) {
     const session = await createSession(user);
     mark("session", sessionStart);
 
-    await clearLoginAttempts(usuario, ipAddress);
+    void clearLoginAttempts(usuario, ipAddress).catch(() => undefined);
     void recordAccessLog(user, ipAddress).catch(() => undefined);
 
     const response = NextResponse.json({

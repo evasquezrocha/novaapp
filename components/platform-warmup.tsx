@@ -54,6 +54,9 @@ export function PlatformWarmup({ companyKey, routes, apiUrls }: PlatformWarmupPr
         try {
           await fetch(apiUrl, {
             method: "GET",
+            headers: {
+              "x-nova-silent": "1",
+            },
             cache: "no-store",
             signal: controller.signal,
           });

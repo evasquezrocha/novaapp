@@ -15,6 +15,9 @@ BEGIN
 
   CREATE UNIQUE INDEX UX_Usuarios_Usuario ON dbo.Usuarios(Usuario);
   CREATE UNIQUE INDEX UX_Usuarios_Correo ON dbo.Usuarios(Correo);
+  CREATE INDEX IX_Usuarios_Usuario_Login
+    ON dbo.Usuarios(Usuario)
+    INCLUDE (Nombre, Rol, Activo, PasswordSalt, PasswordHash, Correo);
   CREATE INDEX IX_Usuarios_Nombre_Id
     ON dbo.Usuarios(Nombre ASC, Id DESC)
     INCLUDE (Usuario, Correo, Rol, Activo, CreadoEn, ActualizadoEn);
