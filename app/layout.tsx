@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { GlobalBusyIndicator } from "@/components/global-busy-indicator";
 import "./globals.css";
 
@@ -15,7 +16,9 @@ export default async function RootLayout({
   return (
     <html lang="es" className="h-full antialiased">
       <body className="min-h-full bg-[var(--background)] text-[var(--foreground)]">
-        <GlobalBusyIndicator />
+        <Suspense fallback={null}>
+          <GlobalBusyIndicator />
+        </Suspense>
         {children}
       </body>
     </html>
