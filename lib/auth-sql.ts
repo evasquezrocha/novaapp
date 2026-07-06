@@ -86,7 +86,11 @@ function buildConfig(): AuthEnv {
 }
 
 export async function getAuthPool() {
-  await ensureDatabaseSchema();
+  await measureAsync("auth.ensureDatabaseSchema", async () => {
+    await ensureDatabaseSchema();
+  }, {
+    slowMs: 200,
+  });
 
   if (!global.__authPool) {
     global.__authPool = sql.connect(buildConfig());
@@ -278,13 +282,25 @@ export async function clearLoginAttempts(usuario: string, ipAddress: string | nu
 }
 
 export async function authenticateUser(usuario: string, password: string) {
-  const user = await findUsuarioForLoginByUsuario(usuario);
+  const user = await measureAsync(
+    "auth.findUsuarioForLoginByUsuario",
+    async () => findUsuarioForLoginByUsuario(usuario),
+    {
+      slowMs: 50,
+    },
+  );
 
   if (!user || !user.Activo) {
     return null;
   }
 
-  const valid = await verifyPassword(password, user.PasswordSalt, user.PasswordHash);
+  const valid = await measureAsync(
+    "auth.verifyPassword",
+    async () => verifyPassword(password, user.PasswordSalt, user.PasswordHash),
+    {
+      slowMs: 150,
+    },
+  );
   if (!valid) {
     return null;
   }

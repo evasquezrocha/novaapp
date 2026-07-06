@@ -43,7 +43,9 @@ export async function POST(request: Request) {
     const ipAddress =
       forwardedFor?.split(",")[0]?.trim() || realIp || request.headers.get("cf-connecting-ip");
 
+    const attemptStart = performance.now();
     const blocked = await getLoginAttemptBlock(usuario, ipAddress);
+    mark("attempts", attemptStart);
     if (blocked) {
       const response = NextResponse.json(
         { error: "Demasiados intentos fallidos. Intenta nuevamente más tarde." },

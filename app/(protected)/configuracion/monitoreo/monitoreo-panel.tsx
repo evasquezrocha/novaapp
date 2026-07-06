@@ -48,6 +48,9 @@ export function MonitoreoPanel({ initialSnapshot }: { initialSnapshot: PerfSnaps
     try {
       const response = await fetch("/api/configuracion/monitoreo", {
         cache: "no-store",
+        headers: {
+          "x-nova-silent": "1",
+        },
       });
       const payload = (await response.json()) as PerfSnapshot & { error?: string };
 
