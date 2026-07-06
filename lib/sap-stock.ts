@@ -137,8 +137,14 @@ export type CentroCostoCcResult = {
   presupuestoMensualServicios: number;
 };
 
+const SAP_QUERY_CACHE_REVALIDATE_SECONDS = 120;
+
 function getProjectCodeForCompany(company: SapCompanyConfig) {
   return company.key === "chile" ? "130531" : "171603";
+}
+
+async function resolveSapCompanyKey(companyKey?: SapCompanyKey | null) {
+  return companyKey ?? (await getActiveSapCompany()).key;
 }
 
 export type MaterialesDevueltosRow = {
@@ -472,9 +478,26 @@ export async function getEquivalentStockRowsByCode(
     return [];
   }
 
-  const pool = await getSapPool();
-
   try {
+    const companyKey = await resolveSapCompanyKey();
+    return getEquivalentStockRowsByCodeCached(companyKey, searchCode);
+  } catch (error) {
+    if (isMissingObjectError(error)) {
+      throw new Error(
+        `No fue posible consultar las equivalencias porque falta una tabla SAP en ${(
+          await getActiveSapCompany()
+        ).label}. Revisa OITM, OITW, OWHS, OMLT o MLT1.`,
+      );
+    }
+
+    throw error;
+  }
+}
+
+const getEquivalentStockRowsByCodeCached = unstable_cache(
+  async (companyKey: SapCompanyKey, searchCode: string): Promise<EquivalentStockRow[]> => {
+    const pool = await getSapPoolForCompany(companyKey);
+
     const result = await pool
       .request()
       .input("codigo", searchCode)
@@ -514,18 +537,13 @@ export async function getEquivalentStockRowsByCode(
       `);
 
     return result.recordset;
-  } catch (error) {
-    if (isMissingObjectError(error)) {
-      throw new Error(
-        `No fue posible consultar las equivalencias porque falta una tabla SAP en ${(
-          await getActiveSapCompany()
-        ).label}. Revisa OITM, OITW, OWHS, OMLT o MLT1.`,
-      );
-    }
-
-    throw error;
-  }
-}
+  },
+  ["platform", "bodega", "equivalentes"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.bodega],
+    revalidate: SAP_QUERY_CACHE_REVALIDATE_SECONDS,
+  },
+);
 
 export async function getPurchaseOrderSearchRows(): Promise<PurchaseOrderSearchRow[]> {
   const pool = await getSapPool();

@@ -1,9 +1,10 @@
 import sql from "mssql";
+import { revalidateTag, unstable_cache } from "next/cache";
 import { createHash, randomBytes, pbkdf2, timingSafeEqual } from "node:crypto";
-import { cache } from "react";
 import { ensureDatabaseSchema } from "@/lib/db-schema";
 import { measureAsync } from "@/lib/server-performance";
 import { findUsuarioForLoginByUsuario } from "@/lib/usuarios-sql";
+import { DEFAULT_CACHE_REVALIDATE_SECONDS, PLATFORM_CACHE_TAGS } from "@/lib/platform-cache";
 
 export type SessionUser = {
   Id: number;
@@ -345,9 +346,16 @@ async function getSessionUserByTokenUncached(token: string) {
   return result.recordset[0] ?? null;
 }
 
-const getSessionUserByTokenCached = cache(async (token: string) => {
-  return getSessionUserByTokenUncached(token);
-});
+const getSessionUserByTokenCached = unstable_cache(
+  async (token: string) => {
+    return getSessionUserByTokenUncached(token);
+  },
+  ["platform", "auth", "session"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.sessions],
+    revalidate: Math.min(10, DEFAULT_CACHE_REVALIDATE_SECONDS),
+  },
+);
 
 export async function getSessionUserByToken(token: string) {
   return getSessionUserByTokenCached(token);
@@ -364,6 +372,8 @@ export async function revokeSession(token: string) {
       SET RevocadoEn = SYSUTCDATETIME()
       WHERE TokenHash = ${toSqlHex(tokenHash)}
     `);
+
+  revalidateTag(PLATFORM_CACHE_TAGS.sessions, "max");
 }
 
 export async function revokeSessionsForUser(userId: number) {
@@ -378,6 +388,8 @@ export async function revokeSessionsForUser(userId: number) {
       WHERE UsuarioId = @userId
         AND RevocadoEn IS NULL
     `);
+
+  revalidateTag(PLATFORM_CACHE_TAGS.sessions, "max");
 }
 
 export async function recordAccessLog(user: SessionUser, ipAddress: string | null) {

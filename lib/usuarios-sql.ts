@@ -6,6 +6,7 @@ import {
   DEFAULT_CACHE_REVALIDATE_SECONDS,
   PLATFORM_CACHE_TAGS,
 } from "@/lib/platform-cache";
+import { measureAsync } from "@/lib/server-performance";
 
 export const MIN_PASSWORD_LENGTH = 12;
 
@@ -128,26 +129,33 @@ function validatePasswordStrength(password: string) {
 }
 
 const listUsuariosCached = unstable_cache(
-  async () => {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .query<UsuarioRow>(`
-        SELECT
-          Id,
-          Nombre,
-          Usuario,
-          Correo,
-          Rol,
-          Activo,
-          CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
-          CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
-        FROM dbo.Usuarios
-        ORDER BY Nombre ASC, Id DESC
-      `);
+  async () =>
+    measureAsync(
+      "usuarios.list",
+      async () => {
+        const pool = await getPool();
+        const result = await pool
+          .request()
+          .query<UsuarioRow>(`
+            SELECT
+              Id,
+              Nombre,
+              Usuario,
+              Correo,
+              Rol,
+              Activo,
+              CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
+              CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
+            FROM dbo.Usuarios
+            ORDER BY Nombre ASC, Id DESC
+          `);
 
-    return result.recordset.map(normalizeUsuarioRow);
-  },
+        return result.recordset.map(normalizeUsuarioRow);
+      },
+      {
+        slowMs: 75,
+      },
+    ),
   ["platform", "usuarios"],
   {
     tags: [PLATFORM_CACHE_TAGS.usuarios],

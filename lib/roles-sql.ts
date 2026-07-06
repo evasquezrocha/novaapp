@@ -7,6 +7,7 @@ import {
   DEFAULT_CACHE_REVALIDATE_SECONDS,
   PLATFORM_CACHE_TAGS,
 } from "@/lib/platform-cache";
+import { measureAsync } from "@/lib/server-performance";
 
 export type RoleRow = {
   Id: number;
@@ -56,7 +57,14 @@ async function readStoredRoles(): Promise<RoleRow[]> {
 }
 
 const readStoredRolesCached = unstable_cache(
-  async () => readStoredRoles(),
+  async () =>
+    measureAsync(
+      "roles.list",
+      async () => readStoredRoles(),
+      {
+        slowMs: 75,
+      },
+    ),
   ["platform", "roles"],
   {
     tags: [PLATFORM_CACHE_TAGS.roles],

@@ -18,8 +18,42 @@ import {
 } from "@/lib/company-config";
 import { getActiveSapCompany } from "@/lib/sap-stock";
 import { canAccess, listPermissions } from "@/lib/permissions-sql";
+import { unstable_cache } from "next/cache";
+import { PLATFORM_CACHE_TAGS, SAP_QUERY_CACHE_REVALIDATE_SECONDS } from "@/lib/platform-cache";
 
 export const dynamic = "force-dynamic";
+
+const getDisponibleOtnDataCached = unstable_cache(
+  async (companyKey: SapCompanyKey, otn: string) => {
+    const [row, materiales, materialesDevueltos, serviciosSinOc, serviciosUtilizados, ncServicios, asientosDirectos, fondosRendidos] =
+      await Promise.all([
+        getProjectBudgetByOtn(otn, companyKey),
+        getMaterialesUtilizadosByOtn(otn, companyKey),
+        getMaterialesDevueltosByOtn(otn, companyKey),
+        getServiciosSinOcByOtn(otn, companyKey),
+        getServiciosUtilizadosByOtn(otn, companyKey),
+        getNcServiciosByOtn(otn, companyKey),
+        getAsientosDirectosByOtn(otn, companyKey),
+        getFondosRendidosByOtn(otn, companyKey),
+      ]);
+
+    return {
+      row,
+      materiales,
+      materialesDevueltos,
+      serviciosSinOc,
+      serviciosUtilizados,
+      ncServicios,
+      asientosDirectos,
+      fondosRendidos,
+    };
+  },
+  ["platform", "api", "produccion", "disponible-otn"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.sistemaOtn],
+    revalidate: SAP_QUERY_CACHE_REVALIDATE_SECONDS,
+  },
+);
 
 export async function GET(request: Request) {
   const cookieStore = await cookies();
@@ -58,25 +92,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [
-      row,
-      materiales,
-      materialesDevueltos,
-      serviciosSinOc,
-      serviciosUtilizados,
-      ncServicios,
-      asientosDirectos,
-      fondosRendidos,
-    ] = await Promise.all([
-      getProjectBudgetByOtn(otn, companyKey),
-      getMaterialesUtilizadosByOtn(otn, companyKey),
-      getMaterialesDevueltosByOtn(otn, companyKey),
-      getServiciosSinOcByOtn(otn, companyKey),
-      getServiciosUtilizadosByOtn(otn, companyKey),
-      getNcServiciosByOtn(otn, companyKey),
-      getAsientosDirectosByOtn(otn, companyKey),
-      getFondosRendidosByOtn(otn, companyKey),
-    ]);
+    const { row, materiales, materialesDevueltos, serviciosSinOc, serviciosUtilizados, ncServicios, asientosDirectos, fondosRendidos } =
+      await getDisponibleOtnDataCached(companyKey, otn);
 
     if (!row) {
       return NextResponse.json(

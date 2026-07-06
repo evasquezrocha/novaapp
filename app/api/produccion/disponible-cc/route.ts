@@ -10,8 +10,38 @@ import {
   getServiciosSinOcByCc,
   getServiciosUtilizadosByCc,
 } from "@/lib/sap-stock";
+import { unstable_cache } from "next/cache";
+import { PLATFORM_CACHE_TAGS, SAP_QUERY_CACHE_REVALIDATE_SECONDS } from "@/lib/platform-cache";
 
 export const dynamic = "force-dynamic";
+
+const getDisponibleCcDataCached = unstable_cache(
+  async (cc: string) => {
+    const [centroCosto, materialesUtilizados, materialesDevueltos, serviciosSinOc, serviciosUtilizados, ncServicios] =
+      await Promise.all([
+        getCentroCostoByCc(cc),
+        getMaterialesUtilizadosByCc(cc),
+        getMaterialesDevueltosByCc(cc),
+        getServiciosSinOcByCc(cc),
+        getServiciosUtilizadosByCc(cc),
+        getNcServiciosByCc(cc),
+      ]);
+
+    return {
+      centroCosto,
+      materialesUtilizados,
+      materialesDevueltos,
+      serviciosSinOc,
+      serviciosUtilizados,
+      ncServicios,
+    };
+  },
+  ["platform", "api", "produccion", "disponible-cc"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.sistemaOtn],
+    revalidate: SAP_QUERY_CACHE_REVALIDATE_SECONDS,
+  },
+);
 
 export async function GET(request: Request) {
   const cookieStore = await cookies();
@@ -38,21 +68,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [
-      centroCosto,
-      materialesUtilizados,
-      materialesDevueltos,
-      serviciosSinOc,
-      serviciosUtilizados,
-      ncServicios,
-    ] = await Promise.all([
-      getCentroCostoByCc(cc),
-      getMaterialesUtilizadosByCc(cc),
-      getMaterialesDevueltosByCc(cc),
-      getServiciosSinOcByCc(cc),
-      getServiciosUtilizadosByCc(cc),
-      getNcServiciosByCc(cc),
-    ]);
+    const { centroCosto, materialesUtilizados, materialesDevueltos, serviciosSinOc, serviciosUtilizados, ncServicios } =
+      await getDisponibleCcDataCached(cc);
 
     return NextResponse.json({
       centroCosto,

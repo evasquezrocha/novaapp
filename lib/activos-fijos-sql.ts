@@ -269,12 +269,20 @@ export async function listActivosFijosCatalogos(): Promise<ActivoFijoCatalogos> 
 }
 
 export async function listActivosFijosPageData() {
-  const [activos, catalogos] = await Promise.all([
-    listActivosFijos(),
-    listActivosFijosCatalogos(),
-  ]);
+  return measureAsync(
+    "activos-fijos.page-data",
+    async () => {
+      const [activos, catalogos] = await Promise.all([
+        listActivosFijos(),
+        listActivosFijosCatalogos(),
+      ]);
 
-  return { activos, catalogos };
+      return { activos, catalogos };
+    },
+    {
+      slowMs: 100,
+    },
+  );
 }
 
 function catalogMeta(category: CatalogKey) {

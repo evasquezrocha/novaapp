@@ -1,8 +1,13 @@
 import { randomBytes } from "node:crypto";
 import sql from "mssql";
+import { revalidateTag, unstable_cache } from "next/cache";
 import { ensureDatabaseSchema } from "@/lib/db-schema";
 import { getAuthPool } from "@/lib/auth-sql";
 import { measureAsync } from "@/lib/server-performance";
+import {
+  DEFAULT_CACHE_REVALIDATE_SECONDS,
+  PLATFORM_CACHE_TAGS,
+} from "@/lib/platform-cache";
 
 const globalForPerfilesTp = globalThis as typeof globalThis & {
   __dbPerfilesTpInit?: Promise<void>;
@@ -230,65 +235,120 @@ function buildPublicProfileSelect() {
   `;
 }
 
-export async function listPerfilTpRows(): Promise<PerfilTpRow[]> {
-  return measureAsync("perfiles-tp.list", async () => {
-    const pool = await getPool();
-    const result = await pool.request().query<PerfilTpRow>(`
-      ${buildAdminSelect()}
-      ORDER BY CreadoEn DESC, Id DESC
-    `);
+const listPerfilTpRowsCached = unstable_cache(
+  async () => {
+    return measureAsync("perfiles-tp.list", async () => {
+      const pool = await getPool();
+      const result = await pool.request().query<PerfilTpRow>(`
+        ${buildAdminSelect()}
+        ORDER BY CreadoEn DESC, Id DESC
+      `);
 
-    return result.recordset;
-  });
+      return result.recordset;
+    });
+  },
+  ["platform", "perfiles-tp", "list"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.perfilesTp],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
+
+const listPerfilTpPublicRowsCached = unstable_cache(
+  async () => {
+    return measureAsync("perfiles-tp.list-public", async () => {
+      const pool = await getPool();
+      const result = await pool.request().query<PerfilTpSummaryRow>(`
+        ${buildSummarySelect()}
+        ORDER BY CreadoEn DESC, Id DESC
+      `);
+
+      return result.recordset;
+    });
+  },
+  ["platform", "perfiles-tp", "list-public"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.perfilesTp],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
+
+const getPerfilTpRowByIdCached = unstable_cache(
+  async (id: number) => {
+    const pool = await getPool();
+    const result = await pool
+      .request()
+      .input("id", sql.Int, id)
+      .query<PerfilTpRow>(`
+        ${buildAdminSelect()}
+        WHERE Id = @id
+      `);
+
+    return result.recordset[0] ?? null;
+  },
+  ["platform", "perfiles-tp", "by-id"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.perfilesTp],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
+
+const getPerfilTpRowByCodigoCached = unstable_cache(
+  async (codigoAleatorio: string) => {
+    const pool = await getPool();
+    const safeCodigo = codigoAleatorio.trim().replace(/'/g, "''");
+    const result = await pool.request().query<PerfilTpRow>(`
+        ${buildAdminSelect()}
+        WHERE CodigoAleatorio = N'${safeCodigo}'
+      `);
+
+    return result.recordset[0] ?? null;
+  },
+  ["platform", "perfiles-tp", "by-codigo"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.perfilesTp],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
+
+const getPerfilTpPublicRowByCodigoCached = unstable_cache(
+  async (codigoAleatorio: string) => {
+    const pool = await getPool();
+    const safeCodigo = codigoAleatorio.trim().replace(/'/g, "''");
+    const result = await pool.request().query<PerfilTpPublicRow>(`
+        ${buildPublicProfileSelect()}
+        WHERE CodigoAleatorio = N'${safeCodigo}'
+      `);
+
+    return result.recordset[0] ?? null;
+  },
+  ["platform", "perfiles-tp", "public-by-codigo"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.perfilesTp],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
+
+export async function listPerfilTpRows(): Promise<PerfilTpRow[]> {
+  return listPerfilTpRowsCached();
 }
 
 export async function listPerfilTpPublicRows(): Promise<PerfilTpSummaryRow[]> {
-  return measureAsync("perfiles-tp.list-public", async () => {
-    const pool = await getPool();
-    const result = await pool.request().query<PerfilTpSummaryRow>(`
-      ${buildSummarySelect()}
-      ORDER BY CreadoEn DESC, Id DESC
-    `);
-
-    return result.recordset;
-  });
+  return listPerfilTpPublicRowsCached();
 }
 
 export async function getPerfilTpRowById(id: number): Promise<PerfilTpRow | null> {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("id", sql.Int, id)
-    .query<PerfilTpRow>(`
-      ${buildAdminSelect()}
-      WHERE Id = @id
-    `);
-
-  return result.recordset[0] ?? null;
+  return getPerfilTpRowByIdCached(id);
 }
 
 export async function getPerfilTpRowByCodigo(codigoAleatorio: string): Promise<PerfilTpRow | null> {
-  const pool = await getPool();
-  const safeCodigo = codigoAleatorio.trim().replace(/'/g, "''");
-  const result = await pool.request().query<PerfilTpRow>(`
-      ${buildAdminSelect()}
-      WHERE CodigoAleatorio = N'${safeCodigo}'
-    `);
-
-  return result.recordset[0] ?? null;
+  return getPerfilTpRowByCodigoCached(codigoAleatorio);
 }
 
 export async function getPerfilTpPublicRowByCodigo(
   codigoAleatorio: string,
 ): Promise<PerfilTpPublicRow | null> {
-  const pool = await getPool();
-  const safeCodigo = codigoAleatorio.trim().replace(/'/g, "''");
-  const result = await pool.request().query<PerfilTpPublicRow>(`
-      ${buildPublicProfileSelect()}
-      WHERE CodigoAleatorio = N'${safeCodigo}'
-    `);
-
-  return result.recordset[0] ?? null;
+  return getPerfilTpPublicRowByCodigoCached(codigoAleatorio);
 }
 
 export async function createPerfilTpRows(input: PerfilTpInput[]) {
@@ -325,6 +385,7 @@ export async function createPerfilTpRows(input: PerfilTpInput[]) {
     }
 
     await transaction.commit();
+    revalidateTag(PLATFORM_CACHE_TAGS.perfilesTp, "max");
   } catch (error) {
     await transaction.rollback();
     throw error;
@@ -378,6 +439,8 @@ export async function updatePerfilTpRow(input: PerfilTpInput & { Id: number }) {
   if (!(result.rowsAffected[0] ?? 0)) {
     throw new Error("No se encontro el perfil a editar.");
   }
+
+  revalidateTag(PLATFORM_CACHE_TAGS.perfilesTp, "max");
 }
 
 export async function updatePerfilTpRowPartial(
@@ -430,6 +493,8 @@ export async function updatePerfilTpRowPartial(
   if (!(result.rowsAffected[0] ?? 0)) {
     throw new Error("No se encontro el perfil a editar.");
   }
+
+  revalidateTag(PLATFORM_CACHE_TAGS.perfilesTp, "max");
 }
 
 export async function deletePerfilTpRow(id: number) {
@@ -442,5 +507,6 @@ export async function deletePerfilTpRow(id: number) {
       WHERE Id = @id
     `);
 
+  revalidateTag(PLATFORM_CACHE_TAGS.perfilesTp, "max");
   return result.rowsAffected[0] ?? 0;
 }

@@ -1,8 +1,10 @@
 import sql from "mssql";
+import { revalidateTag, unstable_cache } from "next/cache";
 import { ensureDatabaseSchema } from "@/lib/db-schema";
 import { getAuthPool } from "@/lib/auth-sql";
 import { measureAsync } from "@/lib/server-performance";
 import type { SessionUser } from "@/lib/auth-sql";
+import { DEFAULT_CACHE_REVALIDATE_SECONDS, PLATFORM_CACHE_TAGS } from "@/lib/platform-cache";
 
 export type CtSupervisoresInput = {
   Correlativo: string;
@@ -156,6 +158,10 @@ function isCtSupervisoresOwner(actor: CtSupervisoresActor, row: CtSupervisoresRo
   );
 }
 
+function actorCacheKey(actor: CtSupervisoresActor) {
+  return `${actor.Rol}::${actor.Usuario}::${actor.Nombre}`;
+}
+
 export function canSeeCtSupervisoresRow(actor: CtSupervisoresActor, row: CtSupervisoresRow) {
   return isPrivilegedCtSupervisoresRole(actor.Rol) || isCtSupervisoresOwner(actor, row);
 }
@@ -254,113 +260,157 @@ async function ensureCtSupervisoresColumns(pool: Awaited<ReturnType<typeof getAu
   `);
 }
 
+const listCtSupervisoresRowsCached = unstable_cache(
+  async (actorKey: string, role: string, usuario: string, nombre: string) => {
+    return measureAsync(
+      "ct-supervisores.list",
+      async () => {
+        const pool = await getPool();
+        const isPrivileged = isPrivilegedCtSupervisoresRole(role);
+        const safeUsuario = escapeSqlString(usuario);
+        const safeNombre = escapeSqlString(nombre);
+
+        const result = await pool.request().query<CtSupervisoresRow>(`
+          SELECT
+            Id,
+            Correlativo,
+            Estado,
+            Nombre,
+            CreadoPorUsuario,
+            CreadoPorNombre,
+            Lugar,
+            CONVERT(varchar(19), Entrada, 120) AS Entrada,
+            CONVERT(varchar(19), Salida, 120) AS Salida,
+            Dias,
+            CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
+            CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
+          FROM dbo.CtSupervisores
+          ${isPrivileged ? "" : `WHERE CreadoPorUsuario = N'${safeUsuario}' OR CreadoPorNombre = N'${safeNombre}'`}
+          ORDER BY CreadoEn DESC, Id DESC
+        `);
+
+        return result.recordset;
+      },
+      {
+        slowMs: 100,
+      },
+    );
+  },
+  ["platform", "ct-supervisores", "list"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.ctSupervisores],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
+
 export async function listCtSupervisoresRows(actor: CtSupervisoresActor): Promise<CtSupervisoresRow[]> {
-  return measureAsync(
-    "ct-supervisores.list",
-    async () => {
-      const pool = await getPool();
-      const isPrivileged = isPrivilegedCtSupervisoresRole(actor.Rol);
-      const safeUsuario = escapeSqlString(actor.Usuario);
-      const safeNombre = escapeSqlString(actor.Nombre);
-
-      const result = await pool.request().query<CtSupervisoresRow>(`
-        SELECT
-          Id,
-          Correlativo,
-          Estado,
-          Nombre,
-          CreadoPorUsuario,
-          CreadoPorNombre,
-          Lugar,
-          CONVERT(varchar(19), Entrada, 120) AS Entrada,
-          CONVERT(varchar(19), Salida, 120) AS Salida,
-          Dias,
-          CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
-          CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
-        FROM dbo.CtSupervisores
-        ${isPrivileged ? "" : `WHERE CreadoPorUsuario = N'${safeUsuario}' OR CreadoPorNombre = N'${safeNombre}'`}
-        ORDER BY CreadoEn DESC, Id DESC
-      `);
-
-      return result.recordset;
-    },
-    {
-      slowMs: 100,
-    },
-  );
+  return listCtSupervisoresRowsCached(actorCacheKey(actor), actor.Rol, actor.Usuario, actor.Nombre);
 }
+
+const getCtSupervisoresRowByIdCached = unstable_cache(
+  async (id: number) => {
+    const pool = await getPool();
+    const result = await pool.request().query<CtSupervisoresRow>(`
+      SELECT TOP (1)
+        Id,
+        Correlativo,
+        Estado,
+        Nombre,
+        CreadoPorUsuario,
+        CreadoPorNombre,
+        Lugar,
+        CONVERT(varchar(19), Entrada, 120) AS Entrada,
+        CONVERT(varchar(19), Salida, 120) AS Salida,
+        Dias,
+        CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
+        CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
+      FROM dbo.CtSupervisores
+      WHERE Id = ${Number(id)}
+    `);
+
+    return result.recordset[0] ?? null;
+  },
+  ["platform", "ct-supervisores", "by-id"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.ctSupervisores],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
 
 export async function getCtSupervisoresRowById(id: number): Promise<CtSupervisoresRow | null> {
-  const pool = await getPool();
-  const result = await pool.request().query<CtSupervisoresRow>(`
-    SELECT TOP (1)
-      Id,
-      Correlativo,
-      Estado,
-      Nombre,
-      CreadoPorUsuario,
-      CreadoPorNombre,
-      Lugar,
-      CONVERT(varchar(19), Entrada, 120) AS Entrada,
-      CONVERT(varchar(19), Salida, 120) AS Salida,
-      Dias,
-      CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
-      CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
-    FROM dbo.CtSupervisores
-    WHERE Id = ${Number(id)}
-  `);
-
-  return result.recordset[0] ?? null;
+  return getCtSupervisoresRowByIdCached(id);
 }
+
+const listCtSupervisoresRowsByCorrelativoCached = unstable_cache(
+  async (correlativo: string) => {
+    const pool = await getPool();
+    const safeCorrelativo = requireText(normalizeText(correlativo), "Correlativo");
+    const result = await pool.request().query<CtSupervisoresRow>(`
+      SELECT
+        Id,
+        Correlativo,
+        Estado,
+        Nombre,
+        CreadoPorUsuario,
+        CreadoPorNombre,
+        Lugar,
+        CONVERT(varchar(19), Entrada, 120) AS Entrada,
+        CONVERT(varchar(19), Salida, 120) AS Salida,
+        Dias,
+        CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
+        CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
+      FROM dbo.CtSupervisores
+      WHERE Correlativo = N'${escapeSqlString(safeCorrelativo)}'
+      ORDER BY Id ASC
+    `);
+
+    return result.recordset;
+  },
+  ["platform", "ct-supervisores", "by-correlativo"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.ctSupervisores],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
 
 export async function listCtSupervisoresRowsByCorrelativo(
   correlativo: string,
 ): Promise<CtSupervisoresRow[]> {
-  const pool = await getPool();
-  const safeCorrelativo = requireText(normalizeText(correlativo), "Correlativo");
-  const result = await pool.request().query<CtSupervisoresRow>(`
-    SELECT
-      Id,
-      Correlativo,
-      Estado,
-      Nombre,
-      CreadoPorUsuario,
-      CreadoPorNombre,
-      Lugar,
-      CONVERT(varchar(19), Entrada, 120) AS Entrada,
-      CONVERT(varchar(19), Salida, 120) AS Salida,
-      Dias,
-      CONVERT(varchar(19), CreadoEn, 120) AS CreadoEn,
-      CONVERT(varchar(19), ActualizadoEn, 120) AS ActualizadoEn
-    FROM dbo.CtSupervisores
-    WHERE Correlativo = N'${escapeSqlString(safeCorrelativo)}'
-    ORDER BY Id ASC
-  `);
-
-  return result.recordset;
+  return listCtSupervisoresRowsByCorrelativoCached(correlativo);
 }
+
+const listCtSupervisoresAuditRowsCached = unstable_cache(
+  async (correlativo: string) => {
+    const pool = await getPool();
+    const safeCorrelativo = requireText(normalizeText(correlativo), "Correlativo");
+    const result = await pool.request().query<CtSupervisoresAuditRow>(`
+      SELECT
+        Id,
+        Correlativo,
+        Accion,
+        EditadoPorUsuario,
+        EditadoPorNombre,
+        EditadoPorRol,
+        CONVERT(varchar(19), EditadoEn, 120) AS EditadoEn,
+        CambiosJson
+      FROM dbo.CtSupervisoresHistorial
+      WHERE Correlativo = N'${escapeSqlString(safeCorrelativo)}'
+      ORDER BY EditadoEn DESC, Id DESC
+    `);
+
+    return result.recordset;
+  },
+  ["platform", "ct-supervisores", "audit-by-correlativo"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.ctSupervisores],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
 
 export async function listCtSupervisoresAuditRows(
   correlativo: string,
 ): Promise<CtSupervisoresAuditRow[]> {
-  const pool = await getPool();
-  const safeCorrelativo = requireText(normalizeText(correlativo), "Correlativo");
-  const result = await pool.request().query<CtSupervisoresAuditRow>(`
-    SELECT
-      Id,
-      Correlativo,
-      Accion,
-      EditadoPorUsuario,
-      EditadoPorNombre,
-      EditadoPorRol,
-      CONVERT(varchar(19), EditadoEn, 120) AS EditadoEn,
-      CambiosJson
-    FROM dbo.CtSupervisoresHistorial
-    WHERE Correlativo = N'${escapeSqlString(safeCorrelativo)}'
-    ORDER BY EditadoEn DESC, Id DESC
-  `);
-
-  return result.recordset;
+  return listCtSupervisoresAuditRowsCached(correlativo);
 }
 
 export async function getNextCtSupervisoresCorrelativo(): Promise<string> {
@@ -422,6 +472,8 @@ export async function createCtSupervisoresRows(input: CtSupervisoresInput[]) {
         )
     `);
   }
+
+  revalidateTag(PLATFORM_CACHE_TAGS.ctSupervisores, "max");
 }
 
 export async function replaceCtSupervisoresRows(input: CtSupervisoresInput[]) {
@@ -497,6 +549,7 @@ export async function replaceCtSupervisoresRows(input: CtSupervisoresInput[]) {
     }
 
     await transaction.commit();
+    revalidateTag(PLATFORM_CACHE_TAGS.ctSupervisores, "max");
   } catch (error) {
     await transaction.rollback();
     throw error;
@@ -511,6 +564,10 @@ export async function deleteCtSupervisoresByCorrelativo(correlativo: string) {
     DELETE FROM dbo.CtSupervisores
     WHERE Correlativo = N'${escapeSqlString(safeCorrelativo)}'
   `);
+
+  if ((result.rowsAffected[0] ?? 0) > 0) {
+    revalidateTag(PLATFORM_CACHE_TAGS.ctSupervisores, "max");
+  }
 
   return result.rowsAffected[0] ?? 0;
 }
@@ -569,4 +626,6 @@ export async function updateCtSupervisoresRow(input: CtSupervisoresInput & { Id:
   if (!(result.rowsAffected[0] ?? 0)) {
     throw new Error("No se encontró el registro a editar.");
   }
+
+  revalidateTag(PLATFORM_CACHE_TAGS.ctSupervisores, "max");
 }

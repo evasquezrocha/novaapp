@@ -5,6 +5,7 @@ import { canAccess, listPermissions } from "@/lib/permissions-sql";
 import { getActiveSapCompany } from "@/lib/sap-stock";
 import { CompanySwitcher } from "@/components/company-switcher";
 import { SessionCard } from "@/components/session-card";
+import { PlatformWarmup } from "@/components/platform-warmup";
 import { SidebarNav } from "@/components/sidebar-nav";
 
 export default async function ProtectedLayout({
@@ -63,6 +64,43 @@ export default async function ProtectedLayout({
   const canSeeBodegaSection = canSeeBodega || canSeeStockActual || canSeeBusquedaEnOc;
   const canSeeAdministracionSection = canSeeAdministracion || canSeeActivosFijos || canSeePerfilesTp;
   const canSeeAsistenciaSection = canSeeAsistencia || canSeeCtSupervisores;
+  const uniqueStrings = (values: Array<string | null>) =>
+    Array.from(new Set(values.filter((value): value is string => Boolean(value))));
+  const warmupRoutes = uniqueStrings([
+    canSeeProduccion ? "/produccion" : null,
+    canSeeDisponibleOtn ? "/produccion/disponible-otn" : null,
+    canSeeDisponibleCc ? "/produccion/disponible-cc" : null,
+    canSeeSistemaOtn ? "/produccion/sistema-otn" : null,
+    canSeeFichaOtn ? "/produccion/sistema-otn/ficha-otn" : null,
+    canSeeBodega ? "/bodega/stock-actual" : null,
+    canSeeStockActual ? "/bodega/stock-actual" : null,
+    canSeeBusquedaEnOc ? "/bodega/busqueda-en-oc" : null,
+    canSeeAdministracion ? "/administracion/activos-fijos" : null,
+    canSeeActivosFijos ? "/administracion/activos-fijos" : null,
+    canSeePerfilesTp ? "/administracion/perfiles-tp" : null,
+    canSeeUsuarios ? "/usuarios" : null,
+    canSeeLog ? "/configuracion/log" : null,
+    canSeeMonitoreo ? "/configuracion/monitoreo" : null,
+    canSeeSistemaOtnImport ? "/configuracion/importar-sistema-otn" : null,
+    canSeePermisos ? "/configuracion/permisos" : null,
+    canSeeRoles ? "/configuracion/permisos/roles" : null,
+    canSeeAsistencia ? "/asistencia/ct-supervisores" : null,
+    canSeeCtSupervisores ? "/asistencia/ct-supervisores" : null,
+  ]);
+  const warmupApiUrls = uniqueStrings([
+    canSeeDisponibleOtn ? "/api/produccion/disponible-otn" : null,
+    canSeeDisponibleCc ? "/api/produccion/disponible-cc" : null,
+    canSeeSistemaOtn ? "/api/produccion/sistema-otn" : null,
+    canSeeFichaOtn ? "/api/produccion/sistema-otn/ficha" : null,
+    canSeeStockActual ? "/api/bodega/stock-actual" : null,
+    canSeeBusquedaEnOc ? "/api/bodega/busqueda-en-oc" : null,
+    canSeeUsuarios ? "/api/usuarios" : null,
+    canSeeActivosFijos ? "/api/administracion/activos-fijos" : null,
+    canSeePerfilesTp ? "/api/administracion/perfiles-tp" : null,
+    canSeePermisos ? "/api/configuracion/permisos" : null,
+    canSeeRoles ? "/api/configuracion/roles" : null,
+    canSeeCtSupervisores ? "/api/asistencia/ct-supervisores" : null,
+  ]);
 
   return (
     <div className="min-h-screen lg:grid lg:h-screen lg:grid-cols-[280px_1fr] lg:overflow-hidden">
@@ -132,7 +170,10 @@ export default async function ProtectedLayout({
         <SessionCard name={session.Nombre} role={session.Rol} />
       </aside>
 
-      <main className="min-w-0 p-6 sm:p-8 lg:h-screen lg:overflow-y-auto lg:p-10">{children}</main>
+      <main className="min-w-0 p-6 sm:p-8 lg:h-screen lg:overflow-y-auto lg:p-10">
+        <PlatformWarmup companyKey={company.key} routes={warmupRoutes} apiUrls={warmupApiUrls} />
+        {children}
+      </main>
     </div>
   );
 }

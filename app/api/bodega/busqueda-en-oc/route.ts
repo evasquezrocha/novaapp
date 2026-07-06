@@ -6,8 +6,21 @@ import {
   type PurchaseOrderSearchMode,
 } from "@/lib/sap-stock";
 import { canAccess, listPermissions } from "@/lib/permissions-sql";
+import { unstable_cache } from "next/cache";
+import { PLATFORM_CACHE_TAGS, SAP_QUERY_CACHE_REVALIDATE_SECONDS } from "@/lib/platform-cache";
 
 export const dynamic = "force-dynamic";
+
+const getBusquedaEnOcCached = unstable_cache(
+  async (mode: PurchaseOrderSearchMode, q: string) => {
+    return searchPurchaseOrderRows({ mode, query: q });
+  },
+  ["platform", "api", "bodega", "busqueda-en-oc"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.bodega],
+    revalidate: SAP_QUERY_CACHE_REVALIDATE_SECONDS,
+  },
+);
 
 export async function GET(request: Request) {
   const cookieStore = await cookies();
@@ -35,10 +48,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const rows = await searchPurchaseOrderRows({
-      mode: mode as PurchaseOrderSearchMode,
-      query: q,
-    });
+    const rows = await getBusquedaEnOcCached(mode as PurchaseOrderSearchMode, q);
     return NextResponse.json({ rows });
   } catch (error) {
     const message =

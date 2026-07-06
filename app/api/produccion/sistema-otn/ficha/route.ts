@@ -6,13 +6,41 @@ import { getSistemaOtnRowByOtn } from "@/lib/sistema-otn-sql";
 import { getSistemaOtnAprobacionesRowsByOtn } from "@/lib/sistema-otn-aprobaciones-sql";
 import { listSistemaOtnEntregasManualesRowsByOtn } from "@/lib/sistema-otn-entregas-manuales-sql";
 import { createServerTimingContext } from "@/lib/server-performance";
-import { resolveSapCompanyKeyFromEmpresa } from "@/lib/company-config";
+import {
+  resolveSapCompanyKeyFromEmpresa,
+  type SapCompanyKey,
+} from "@/lib/company-config";
 import {
   getSalesCreditNotesByOtn,
   getSalesInvoicesByOtn,
 } from "@/lib/sap-stock";
+import { unstable_cache } from "next/cache";
+import { PLATFORM_CACHE_TAGS, SAP_QUERY_CACHE_REVALIDATE_SECONDS } from "@/lib/platform-cache";
 
 export const dynamic = "force-dynamic";
+
+const getSistemaOtnFichaRelatedCached = unstable_cache(
+  async (otn: string, companyKey: SapCompanyKey) => {
+    const [aprobaciones, entregasManuales, facturas, notasCredito] = await Promise.all([
+      getSistemaOtnAprobacionesRowsByOtn(otn),
+      listSistemaOtnEntregasManualesRowsByOtn(otn),
+      getSalesInvoicesByOtn(otn, companyKey),
+      getSalesCreditNotesByOtn(otn, companyKey),
+    ]);
+
+    return {
+      aprobaciones,
+      entregasManuales,
+      facturas,
+      notasCredito,
+    };
+  },
+  ["platform", "api", "produccion", "sistema-otn", "ficha"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.sistemaOtn],
+    revalidate: SAP_QUERY_CACHE_REVALIDATE_SECONDS,
+  },
+);
 
 export async function GET(request: Request) {
   const timing = createServerTimingContext("GET /api/produccion/sistema-otn/ficha");
@@ -52,15 +80,9 @@ export async function GET(request: Request) {
     const info = await timing.measure("info", () => getSistemaOtnRowByOtn(otn));
     const companyKey = resolveSapCompanyKeyFromEmpresa(info?.Empresa);
 
-    const [aprobaciones, entregasManuales, facturas, notasCredito] = await timing.measure(
+    const { aprobaciones, entregasManuales, facturas, notasCredito } = await timing.measure(
       "related",
-      () =>
-        Promise.all([
-          getSistemaOtnAprobacionesRowsByOtn(otn),
-          listSistemaOtnEntregasManualesRowsByOtn(otn),
-          getSalesInvoicesByOtn(otn, companyKey),
-          getSalesCreditNotesByOtn(otn, companyKey),
-        ]),
+      () => getSistemaOtnFichaRelatedCached(otn, companyKey),
     );
 
     const response = NextResponse.json({
