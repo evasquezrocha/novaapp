@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { ensureDatabaseSchema } from "@/lib/db-schema";
 import { GlobalBusyIndicator } from "@/components/global-busy-indicator";
 import "./globals.css";
 
@@ -13,8 +12,6 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  await ensureDatabaseSchema();
-
   return (
     <html lang="es" className="h-full antialiased">
       <body className="min-h-full bg-[var(--background)] text-[var(--foreground)]">

@@ -7,13 +7,14 @@ import { canAccess, listPermissions } from "@/lib/permissions-sql";
 export default async function Home() {
   const cookieStore = await cookies();
   const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
-  const session = token ? await getSessionUserByToken(token) : null;
+  const [session, permissions] = await Promise.all([
+    token ? getSessionUserByToken(token) : Promise.resolve(null),
+    listPermissions(),
+  ]);
 
   if (!session) {
     redirect("/login");
   }
-
-  const permissions = await listPermissions();
   const allowedModules = [
     { href: "/produccion", label: "Producción", module: "Producción" },
     { href: "/produccion/sistema-otn", label: "Sistema OTN", module: "Sistema OTN" },

@@ -4,7 +4,6 @@ import { AUTH_COOKIE_NAME, getSessionUserByToken } from "@/lib/auth-sql";
 import { canAccess, listPermissions } from "@/lib/permissions-sql";
 import { getActiveSapCompany } from "@/lib/sap-stock";
 import { CompanySwitcher } from "@/components/company-switcher";
-import { PlatformWarmup } from "@/components/platform-warmup";
 import { SessionCard } from "@/components/session-card";
 import { SidebarNav } from "@/components/sidebar-nav";
 
@@ -26,8 +25,10 @@ export default async function ProtectedLayout({
     redirect("/login");
   }
 
-  const permissions = await listPermissions();
-  const company = await getActiveSapCompany();
+  const [permissions, company] = await Promise.all([
+    listPermissions(),
+    getActiveSapCompany(),
+  ]);
   const canSeeProduccion = canAccess(permissions, session.Rol, "Producción");
   const canSeeSistemaOtn = canAccess(permissions, session.Rol, "Sistema OTN");
   const canSeeBodega = canAccess(permissions, session.Rol, "Bodega");
@@ -60,47 +61,9 @@ export default async function ProtectedLayout({
   const canSeeBodegaSection = canSeeBodega || canSeeStockActual || canSeeBusquedaEnOc;
   const canSeeAdministracionSection = canSeeAdministracion || canSeeActivosFijos || canSeePerfilesTp;
   const canSeeAsistenciaSection = canSeeAsistencia || canSeeCtSupervisores;
-  const warmupRoutes = [
-    canSeeProduccion ? "/produccion/disponible-otn" : null,
-    canSeeProduccion ? "/produccion/disponible-cc" : null,
-    canSeeSistemaOtn ? "/produccion/sistema-otn" : null,
-    canSeeSistemaOtn ? "/produccion/sistema-otn/ficha-otn" : null,
-    canSeeBodega ? "/bodega/stock-actual" : null,
-    canSeeBodega ? "/bodega/busqueda-en-oc" : null,
-    canSeeAdministracion ? "/administracion/activos-fijos" : null,
-    canSeeAdministracion ? "/administracion/perfiles-tp" : null,
-    canSeeUsuarios ? "/usuarios" : null,
-    canSeeLog ? "/configuracion/log" : null,
-    canSeeMonitoreo ? "/configuracion/monitoreo" : null,
-    canSeeSistemaOtnImport ? "/configuracion/importar-sistema-otn" : null,
-    canSeePermisos ? "/configuracion/permisos" : null,
-    canSeePermisos ? "/configuracion/permisos/roles" : null,
-    canSeeAsistencia ? "/asistencia/ct-supervisores" : null,
-    canSeeDisponibleOtn ? "/produccion/disponible-otn" : null,
-    canSeeDisponibleCc ? "/produccion/disponible-cc" : null,
-    canSeeFichaOtn ? "/produccion/sistema-otn/ficha-otn" : null,
-    canSeeStockActual ? "/bodega/stock-actual" : null,
-    canSeeBusquedaEnOc ? "/bodega/busqueda-en-oc" : null,
-    canSeeActivosFijos ? "/administracion/activos-fijos" : null,
-    canSeePerfilesTp ? "/administracion/perfiles-tp" : null,
-    canSeeUsersConfig ? "/usuarios" : null,
-    canSeeRoles ? "/configuracion/permisos/roles" : null,
-    canSeeCtSupervisores ? "/asistencia/ct-supervisores" : null,
-  ].filter((value): value is string => Boolean(value));
-  const warmupApiUrls = [
-    canSeeSistemaOtn ? "/api/produccion/sistema-otn" : null,
-    canSeeBodega ? "/api/bodega/stock-actual" : null,
-    canSeeAdministracion ? "/api/administracion/activos-fijos" : null,
-    canSeeAdministracion ? "/api/administracion/perfiles-tp" : null,
-  ].filter((value): value is string => Boolean(value));
 
   return (
     <div className="min-h-screen lg:grid lg:h-screen lg:grid-cols-[280px_1fr] lg:overflow-hidden">
-      <PlatformWarmup
-        companyKey={company.key}
-        routes={warmupRoutes}
-        apiUrls={warmupApiUrls}
-      />
 
       <aside className="scrollbar-hidden border-b border-[#f3d2b1] bg-[#2b3a44] px-6 py-8 text-white lg:h-screen lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <div className="mb-10">

@@ -14,12 +14,14 @@ export default async function DisponibleOtnPage() {
     redirect("/login");
   }
 
-  const permissions = await listPermissions();
+  const [permissions, activeCompany] = await Promise.all([
+    listPermissions(),
+    getActiveSapCompany(),
+  ]);
+
   if (!canAccess(permissions, session.Rol, "Producción")) {
     redirect("/forbidden");
   }
-
-  const activeCompany = await getActiveSapCompany();
 
   return (
     <section className="grid gap-6">

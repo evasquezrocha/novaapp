@@ -1,6 +1,5 @@
 import sql from "mssql";
 import { revalidateTag, unstable_cache } from "next/cache";
-import { cache } from "react";
 import { getAuthPool } from "@/lib/auth-sql";
 import { ACTIONS, MODULE_SECTIONS, MODULES, ROLES } from "@/lib/permissions-config";
 import { listRoles as listStoredRoles } from "@/lib/roles-sql";
@@ -131,19 +130,26 @@ function mergePermissions(
   });
 }
 
-const listPermissionsRequestCached = cache(async (): Promise<PermissionRow[]> => {
-  return measureAsync(
-    "permissions.listPermissions",
-    async () => {
-      const defaults = await buildDefaultPermissions();
-      const stored = await readStoredPermissionsCached();
-      return mergePermissions(defaults, stored);
-    },
-    {
-      slowMs: 75,
-    },
-  );
-});
+const listPermissionsRequestCached = unstable_cache(
+  async (): Promise<PermissionRow[]> => {
+    return measureAsync(
+      "permissions.listPermissions",
+      async () => {
+        const defaults = await buildDefaultPermissions();
+        const stored = await readStoredPermissionsCached();
+        return mergePermissions(defaults, stored);
+      },
+      {
+        slowMs: 75,
+      },
+    );
+  },
+  ["platform", "permissions", "merged"],
+  {
+    tags: [PLATFORM_CACHE_TAGS.permissions, PLATFORM_CACHE_TAGS.roles],
+    revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
+  },
+);
 
 export async function listPermissions(): Promise<PermissionRow[]> {
   return listPermissionsRequestCached();
