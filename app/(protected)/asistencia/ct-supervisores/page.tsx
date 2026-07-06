@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AUTH_COOKIE_NAME, getSessionUserByToken } from "@/lib/auth-sql";
 import { getNextCtSupervisoresCorrelativo, listCtSupervisoresRows } from "@/lib/ct-supervisores-sql";
+import { canAccess, listPermissions } from "@/lib/permissions-sql";
 import { CtSupervisoresManager } from "./ct-supervisores-manager";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +21,12 @@ export default async function CtSupervisoresPage() {
     redirect("/login");
   }
 
-  const rows = await listCtSupervisoresRows();
+  const permissions = await listPermissions();
+  if (!canAccess(permissions, session.Rol, "Asistencia")) {
+    redirect("/forbidden");
+  }
+
+  const rows = await listCtSupervisoresRows(session);
   const nextCorrelativo = await getNextCtSupervisoresCorrelativo();
 
   return (
@@ -40,6 +46,8 @@ export default async function CtSupervisoresPage() {
 
       <CtSupervisoresManager
         sessionName={session.Nombre}
+        sessionUser={session.Usuario}
+        sessionRole={session.Rol}
         initialRows={rows}
         initialNextCorrelativo={nextCorrelativo}
       />

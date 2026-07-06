@@ -12,23 +12,74 @@ type SectionKey =
   | "configuracion"
   | "asistencia";
 
+type NavLinkItem = {
+  kind: "link";
+  href: string;
+  label: string;
+  active: boolean;
+  visible: boolean;
+};
+
+type NavGroupItem = {
+  kind: "group";
+  key: string;
+  label: string;
+  active: boolean;
+  visible: boolean;
+  children: NavLinkItem[];
+};
+
 type Section = {
   key: SectionKey;
   title: string;
   visible: boolean;
-  items: Array<{
-    href: string;
-    label: string;
-    active: boolean;
-  }>;
+  items: Array<NavLinkItem | NavGroupItem>;
 };
 
-function navLinkClass(active: boolean) {
+type NavVisibility = {
+  produccion: {
+    section: boolean;
+    disponibleOtn: boolean;
+    disponibleCc: boolean;
+  };
+  sistemaOtn: {
+    section: boolean;
+    sistemaOtn: boolean;
+    fichaOtn: boolean;
+  };
+  bodega: {
+    section: boolean;
+    stockActual: boolean;
+    busquedaEnOc: boolean;
+  };
+  administracion: {
+    section: boolean;
+    activosFijos: boolean;
+    perfilesTp: boolean;
+  };
+  configuracion: {
+    section: boolean;
+    usuarios: boolean;
+    log: boolean;
+    monitoreo: boolean;
+    importarSistemaOtn: boolean;
+    permisos: boolean;
+    roles: boolean;
+  };
+  asistencia: {
+    section: boolean;
+    ctSupervisores: boolean;
+  };
+};
+
+function navLinkClass(active: boolean, visible: boolean) {
   return [
     "flex items-center justify-between rounded-xl px-3 py-2 text-xs font-medium transition",
-    active
-      ? "bg-[#ff9200] text-white hover:bg-[#ffb347]"
-      : "bg-white/10 text-white hover:bg-[#ffb347]/15",
+    !visible
+      ? "cursor-not-allowed bg-white/6 text-white/35"
+      : active
+        ? "bg-[#ff9200] text-white hover:bg-[#ffb347]"
+        : "bg-white/10 text-white hover:bg-[#ffb347]/15",
   ].join(" ");
 }
 
@@ -59,7 +110,9 @@ export function SidebarNav({
   canSeeMonitoreo,
   canSeeSistemaOtnImport,
   canSeePermisos,
+  canSeeAsistencia,
   canSeeAdministracion,
+  navVisibility,
 }: {
   canSeeProduccion: boolean;
   canSeeSistemaOtn: boolean;
@@ -69,7 +122,9 @@ export function SidebarNav({
   canSeeMonitoreo: boolean;
   canSeeSistemaOtnImport: boolean;
   canSeePermisos: boolean;
+  canSeeAsistencia: boolean;
   canSeeAdministracion: boolean;
+  navVisibility: NavVisibility;
 }) {
   const pathname = usePathname();
   const [openSection, setOpenSection] = useState<SectionKey | null>(null);
@@ -82,91 +137,173 @@ export function SidebarNav({
   const isActivosFijosActive = pathname.startsWith("/administracion/activos-fijos");
   const isPerfilesTpActive = pathname.startsWith("/administracion/perfiles-tp");
   const isCtSupervisoresActive = pathname.startsWith("/asistencia/ct-supervisores");
-
+  const isDisponibleOtnActive = pathname === "/produccion/disponible-otn";
+  const isDisponibleCcActive = pathname === "/produccion/disponible-cc";
+  const isSistemaOtnActive = pathname === "/produccion/sistema-otn";
+  const isFichaOtnActive = pathname === "/produccion/sistema-otn/ficha-otn";
+  const isStockActualActive = pathname === "/bodega/stock-actual";
+  const isBusquedaOcActive = pathname === "/bodega/busqueda-en-oc";
   const activeSection: SectionKey | null = isUsuariosActive
     ? "configuracion"
     : isLogActive || isMonitoreoActive || isImportSistemaOtnActive || isPermisosActive
       ? "configuracion"
-      : isActivosFijosActive
+      : isActivosFijosActive || isPerfilesTpActive
         ? "administracion"
-        : isPerfilesTpActive
-          ? "administracion"
         : isCtSupervisoresActive
           ? "asistencia"
-        : pathname.startsWith("/bodega/")
-          ? "bodega"
-          : pathname.startsWith("/produccion/sistema-otn")
-            ? "sistemaOtn"
-            : pathname.startsWith("/produccion/")
-              ? "produccion"
-              : null;
+          : isStockActualActive || isBusquedaOcActive
+            ? "bodega"
+            : isSistemaOtnActive || isFichaOtnActive
+              ? "sistemaOtn"
+              : isDisponibleOtnActive || isDisponibleCcActive
+                ? "produccion"
+                : null;
 
   const sections: Section[] = [
     {
       key: "produccion",
       title: "Produccion",
-      visible: canSeeProduccion,
+      visible: navVisibility.produccion.section && (canSeeProduccion || navVisibility.produccion.disponibleOtn || navVisibility.produccion.disponibleCc),
       items: [
         {
-          href: "/produccion/disponible-otn",
-          label: "Disponible OTN",
-          active: pathname === "/produccion/disponible-otn",
-        },
-        {
-          href: "/produccion/disponible-cc",
-          label: "Disponible CC",
-          active: pathname === "/produccion/disponible-cc",
+          kind: "group",
+          key: "produccion-group",
+          label: "Submódulos",
+          active: isDisponibleOtnActive || isDisponibleCcActive,
+          visible: true,
+          children: [
+            {
+              kind: "link",
+              href: "/produccion/disponible-otn",
+              label: "Disponible OTN",
+              active: isDisponibleOtnActive,
+              visible: navVisibility.produccion.disponibleOtn,
+            },
+            {
+              kind: "link",
+              href: "/produccion/disponible-cc",
+              label: "Disponible CC",
+              active: isDisponibleCcActive,
+              visible: navVisibility.produccion.disponibleCc,
+            },
+          ],
         },
       ],
     },
     {
       key: "sistemaOtn",
       title: "Sistema OTN",
-      visible: canSeeSistemaOtn,
+      visible: navVisibility.sistemaOtn.section && (canSeeSistemaOtn || navVisibility.sistemaOtn.fichaOtn),
       items: [
         {
-          href: "/produccion/sistema-otn",
-          label: "Sistema OTN",
-          active: pathname === "/produccion/sistema-otn",
-        },
-        {
-          href: "/produccion/sistema-otn/ficha-otn",
-          label: "Ficha OTN",
-          active: pathname === "/produccion/sistema-otn/ficha-otn",
+          kind: "group",
+          key: "sistema-otn-group",
+          label: "Submódulos",
+          active: isSistemaOtnActive || isFichaOtnActive,
+          visible: true,
+          children: [
+            {
+              kind: "link",
+              href: "/produccion/sistema-otn",
+              label: "Sistema OTN",
+              active: isSistemaOtnActive,
+              visible: navVisibility.sistemaOtn.sistemaOtn,
+            },
+            {
+              kind: "link",
+              href: "/produccion/sistema-otn/ficha-otn",
+              label: "Ficha OTN",
+              active: isFichaOtnActive,
+              visible: navVisibility.sistemaOtn.fichaOtn,
+            },
+          ],
         },
       ],
     },
     {
       key: "bodega",
       title: "Bodega",
-      visible: canSeeBodega,
+      visible: navVisibility.bodega.section && (canSeeBodega || navVisibility.bodega.stockActual || navVisibility.bodega.busquedaEnOc),
       items: [
         {
-          href: "/bodega/stock-actual",
-          label: "Stock Actual",
-          active: pathname === "/bodega/stock-actual",
+          kind: "group",
+          key: "bodega-group",
+          label: "Submódulos",
+          active: isStockActualActive || isBusquedaOcActive,
+          visible: true,
+          children: [
+            {
+              kind: "link",
+              href: "/bodega/stock-actual",
+              label: "Stock Actual",
+              active: isStockActualActive,
+              visible: navVisibility.bodega.stockActual,
+            },
+            {
+              kind: "link",
+              href: "/bodega/busqueda-en-oc",
+              label: "Busqueda en OC",
+              active: isBusquedaOcActive,
+              visible: navVisibility.bodega.busquedaEnOc,
+            },
+          ],
         },
+      ],
+    },
+    {
+      key: "asistencia",
+      title: "ASISTENCIA",
+      visible: navVisibility.asistencia.section && (canSeeAsistencia || navVisibility.asistencia.ctSupervisores),
+      items: [
         {
-          href: "/bodega/busqueda-en-oc",
-          label: "Busqueda en OC",
-          active: pathname === "/bodega/busqueda-en-oc",
+          kind: "group",
+          key: "asistencia-group",
+          label: "Submódulos",
+          active: isCtSupervisoresActive,
+          visible: true,
+          children: [
+            {
+              kind: "link",
+              href: "/asistencia/ct-supervisores",
+              label: "CT Supervisores",
+              active: isCtSupervisoresActive,
+              visible: navVisibility.asistencia.ctSupervisores,
+            },
+          ],
         },
       ],
     },
     {
       key: "administracion",
       title: "Administracion",
-      visible: canSeeAdministracion,
+      visible:
+        navVisibility.administracion.section &&
+        (canSeeAdministracion ||
+          navVisibility.administracion.activosFijos ||
+          navVisibility.administracion.perfilesTp),
       items: [
         {
-          href: "/administracion/activos-fijos",
-          label: "Activos Fijos",
-          active: isActivosFijosActive,
-        },
-        {
-          href: "/administracion/perfiles-tp",
-          label: "Perfiles TP",
-          active: isPerfilesTpActive,
+          kind: "group",
+          key: "administracion-group",
+          label: "Submódulos",
+          active: isActivosFijosActive || isPerfilesTpActive,
+          visible: true,
+          children: [
+            {
+              kind: "link",
+              href: "/administracion/activos-fijos",
+              label: "Activos Fijos",
+              active: isActivosFijosActive,
+              visible: navVisibility.administracion.activosFijos,
+            },
+            {
+              kind: "link",
+              href: "/administracion/perfiles-tp",
+              label: "Perfiles TP",
+              active: isPerfilesTpActive,
+              visible: navVisibility.administracion.perfilesTp,
+            },
+          ],
         },
       ],
     },
@@ -174,64 +311,64 @@ export function SidebarNav({
       key: "configuracion",
       title: "Configuracion",
       visible:
-        canSeeUsuarios || canSeeLog || canSeeMonitoreo || canSeeSistemaOtnImport || canSeePermisos,
-      items: [
-        ...(canSeeUsuarios
-          ? [
-              {
-                href: "/usuarios",
-                label: "Usuarios",
-                active: isUsuariosActive,
-              },
-            ]
-          : []),
-        ...(canSeeLog
-          ? [
-              {
-                href: "/configuracion/log",
-                label: "Log",
-                active: isLogActive,
-              },
-            ]
-          : []),
-        ...(canSeeMonitoreo
-          ? [
-              {
-                href: "/configuracion/monitoreo",
-                label: "Monitoreo",
-                active: isMonitoreoActive,
-              },
-            ]
-          : []),
-        ...(canSeeSistemaOtnImport
-          ? [
-              {
-                href: "/configuracion/importar-sistema-otn",
-                label: "Importar Sistema OTN",
-                active: isImportSistemaOtnActive,
-              },
-            ]
-          : []),
-        ...(canSeePermisos
-          ? [
-              {
-                href: "/configuracion/permisos",
-                label: "Permisos",
-                active: isPermisosActive,
-              },
-            ]
-          : []),
-      ],
-    },
-    {
-      key: "asistencia",
-      title: "ASISTENCIA",
-      visible: true,
+        navVisibility.configuracion.section &&
+        (canSeeUsuarios ||
+          canSeeLog ||
+          canSeeMonitoreo ||
+          canSeeSistemaOtnImport ||
+          canSeePermisos ||
+          navVisibility.configuracion.roles),
       items: [
         {
-          href: "/asistencia/ct-supervisores",
-          label: "CT Supervisores",
-          active: isCtSupervisoresActive,
+          kind: "link",
+          href: "/usuarios",
+          label: "Usuarios",
+          active: isUsuariosActive,
+          visible: navVisibility.configuracion.usuarios,
+        },
+        {
+          kind: "link",
+          href: "/configuracion/log",
+          label: "Log",
+          active: isLogActive,
+          visible: navVisibility.configuracion.log,
+        },
+        {
+          kind: "link",
+          href: "/configuracion/monitoreo",
+          label: "Monitoreo",
+          active: isMonitoreoActive,
+          visible: navVisibility.configuracion.monitoreo,
+        },
+        {
+          kind: "link",
+          href: "/configuracion/importar-sistema-otn",
+          label: "Importar Sistema OTN",
+          active: isImportSistemaOtnActive,
+          visible: navVisibility.configuracion.importarSistemaOtn,
+        },
+        {
+          kind: "group",
+          key: "permisos",
+          label: "Permisos",
+          active: isPermisosActive,
+          visible: navVisibility.configuracion.permisos || navVisibility.configuracion.roles,
+          children: [
+            {
+              kind: "link",
+              href: "/configuracion/permisos",
+              label: "Matriz",
+              active: pathname === "/configuracion/permisos",
+              visible: navVisibility.configuracion.permisos,
+            },
+            {
+              kind: "link",
+              href: "/configuracion/permisos/roles",
+              label: "Roles",
+              active: pathname.startsWith("/configuracion/permisos/roles"),
+              visible: navVisibility.configuracion.roles,
+            },
+          ],
         },
       ],
     },
@@ -261,14 +398,42 @@ export function SidebarNav({
 
               {isExpanded ? (
                 <div className="mt-3 space-y-2">
-                  {section.items.map((item) => (
-                    <Link key={item.href} href={item.href} className={navLinkClass(item.active)}>
-                      <span>{item.label}</span>
-                      <span aria-hidden className="text-white/90">
-                        {"->"}
-                      </span>
-                    </Link>
-                  ))}
+                  {section.items.map((item) => {
+                    const visible = item.kind === "group" ? item.visible : item.visible;
+                    if (!visible) {
+                      return null;
+                    }
+
+                    if (item.kind === "group") {
+                      return (
+                        <div key={item.key} className="space-y-2 border-l border-white/10 pl-3">
+                          {item.children
+                            .filter((child) => child.visible)
+                            .map((child) => (
+                              <Link
+                                key={child.href}
+                                href={child.href}
+                                className={navLinkClass(child.active, child.visible)}
+                              >
+                                <span>{child.label}</span>
+                                <span aria-hidden className="text-white/90">
+                                  {"->"}
+                                </span>
+                              </Link>
+                            ))}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <Link key={item.href} href={item.href} className={navLinkClass(item.active, item.visible)}>
+                        <span>{item.label}</span>
+                        <span aria-hidden className="text-white/90">
+                          {"->"}
+                        </span>
+                      </Link>
+                    );
+                  })}
                 </div>
               ) : null}
             </div>

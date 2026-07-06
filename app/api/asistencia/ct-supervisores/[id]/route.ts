@@ -3,16 +3,79 @@ import { cookies } from "next/headers";
 import { AUTH_COOKIE_NAME, getSessionUserByToken } from "@/lib/auth-sql";
 import {
   CT_SUPERVISORES_ESTADOS,
-  deleteCtSupervisoresByCorrelativo,
+  canChangeCtSupervisoresEstado,
+  canDeleteCtSupervisoresRow,
+  canEditCtSupervisoresRow,
+  canSeeCtSupervisoresRow,
   getCtSupervisoresRowById,
-  replaceCtSupervisoresRows,
 } from "@/lib/ct-supervisores-sql";
+import {
+  deleteCtSupervisoresByCorrelativoWithAudit,
+  listCtSupervisoresHistoryRows,
+  replaceCtSupervisoresRowsWithAudit,
+} from "@/lib/ct-supervisores-audit-sql";
 
 export const dynamic = "force-dynamic";
 
 function parseId(raw: string) {
   const id = Number(raw);
   return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+function parseChangesJson(raw: string) {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
+  const session = token ? await getSessionUserByToken(token) : null;
+
+  if (!session) {
+    return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+  }
+
+  const { id: rawId } = await params;
+  const id = parseId(rawId);
+
+  if (!id) {
+    return NextResponse.json({ error: "Id invalido." }, { status: 400 });
+  }
+
+  const existing = await getCtSupervisoresRowById(id);
+  if (!existing) {
+    return NextResponse.json({ error: "No se encontro el registro." }, { status: 404 });
+  }
+
+  if (!canSeeCtSupervisoresRow(session, existing)) {
+    return NextResponse.json({ error: "No autorizado." }, { status: 403 });
+  }
+
+  try {
+    const history = await listCtSupervisoresHistoryRows(existing.Correlativo);
+    return NextResponse.json({
+      row: existing,
+      history: history.map((entry) => ({
+        ...entry,
+        Cambios: parseChangesJson(entry.CambiosJson),
+      })),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No fue posible cargar el historial.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
 
 export async function PATCH(
@@ -39,6 +102,10 @@ export async function PATCH(
     return NextResponse.json({ error: "No se encontro el registro a editar." }, { status: 404 });
   }
 
+  if (!canEditCtSupervisoresRow(session, existing)) {
+    return NextResponse.json({ error: "No autorizado." }, { status: 403 });
+  }
+
   try {
     const body = (await request.json()) as {
       estado?: string;
@@ -58,6 +125,13 @@ export async function PATCH(
     const estado = body.estado?.trim();
     if (!estado || !CT_SUPERVISORES_ESTADOS.includes(estado as (typeof CT_SUPERVISORES_ESTADOS)[number])) {
       return NextResponse.json({ error: "Estado es obligatorio." }, { status: 400 });
+    }
+
+    if (!canChangeCtSupervisoresEstado(session, existing, estado as (typeof CT_SUPERVISORES_ESTADOS)[number])) {
+      return NextResponse.json(
+        { error: "No puedes cambiar el estado de este registro." },
+        { status: 403 },
+      );
     }
 
     const normalizedRows = rows.map((row, index) => {
@@ -86,6 +160,8 @@ export async function PATCH(
         Correlativo: existing.Correlativo,
         Estado: estado as (typeof CT_SUPERVISORES_ESTADOS)[number],
         Nombre: existing.Nombre,
+        CreadoPorUsuario: existing.CreadoPorUsuario,
+        CreadoPorNombre: existing.CreadoPorNombre,
         Lugar: lugar,
         Entrada: entrada,
         Salida: salida,
@@ -93,7 +169,7 @@ export async function PATCH(
       };
     });
 
-    await replaceCtSupervisoresRows(normalizedRows);
+    await replaceCtSupervisoresRowsWithAudit(normalizedRows, session);
 
     return NextResponse.json({ ok: true, replaced: normalizedRows.length });
   } catch (error) {
@@ -138,8 +214,12 @@ export async function DELETE(
     return NextResponse.json({ error: "No se encontro el formulario a eliminar." }, { status: 404 });
   }
 
+  if (!canDeleteCtSupervisoresRow(session, existing)) {
+    return NextResponse.json({ error: "No autorizado." }, { status: 403 });
+  }
+
   try {
-    const deleted = await deleteCtSupervisoresByCorrelativo(existing.Correlativo);
+    const deleted = await deleteCtSupervisoresByCorrelativoWithAudit(existing.Correlativo, session);
 
     return NextResponse.json({ ok: true, deleted });
   } catch (error) {

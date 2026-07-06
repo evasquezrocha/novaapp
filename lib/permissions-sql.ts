@@ -2,7 +2,8 @@ import sql from "mssql";
 import { revalidateTag, unstable_cache } from "next/cache";
 import { cache } from "react";
 import { getAuthPool } from "@/lib/auth-sql";
-import { ACTIONS, MODULES, ROLES } from "@/lib/permissions-config";
+import { ACTIONS, MODULE_SECTIONS, MODULES, ROLES } from "@/lib/permissions-config";
+import { listRoles as listStoredRoles } from "@/lib/roles-sql";
 import { measureAsync } from "@/lib/server-performance";
 import {
   DEFAULT_CACHE_REVALIDATE_SECONDS,
@@ -18,32 +19,70 @@ export type PermissionRow = {
 
 type StoredPermissionRow = PermissionRow;
 
-function defaultAllowed(role: string, module: string, action: string) {
+function defaultAllowed(role: string, moduleName: string, action: string) {
   if (role === "Administrador") {
     return true;
   }
 
+  if ((role === "RRHH" || role === "Gerencia") && moduleName === "Asistencia") {
+    return action === "Ver";
+  }
+
   if (role === "Supervisor") {
-    return action === "Ver" && module !== "Permisos";
+    return action === "Ver" && moduleName !== "Permisos";
   }
 
   if (role === "Operador") {
-    return action === "Ver" && (module === "Producción" || module === "Sistema OTN" || module === "Bodega");
+    return (
+      action === "Ver" &&
+      (moduleName === "Producción" || moduleName === "Sistema OTN" || moduleName === "Bodega")
+    );
   }
 
   return false;
 }
 
-export function buildDefaultPermissions(): PermissionRow[] {
-  return ROLES.flatMap((role) =>
-    MODULES.flatMap((module) =>
-      ACTIONS.map((action) => ({
-        Rol: role,
-        Modulo: module,
-        Accion: action,
-        Permitido: defaultAllowed(role, module, action),
-      })),
-    ),
+export async function buildDefaultPermissions(): Promise<PermissionRow[]> {
+  const storedRoles = await listStoredRoles();
+  const roles = storedRoles.length > 0 ? storedRoles : [...ROLES];
+
+  const defaults: PermissionRow[] = [];
+
+  for (const role of roles) {
+    for (const moduleName of MODULES) {
+      for (const action of ACTIONS) {
+        defaults.push({
+          Rol: role,
+          Modulo: moduleName,
+          Accion: action,
+          Permitido: defaultAllowed(role, moduleName, action),
+        });
+      }
+    }
+
+    for (const section of MODULE_SECTIONS) {
+      const parentModule = section.modules[0];
+
+      for (const submodule of section.submodules) {
+        defaults.push({
+          Rol: role,
+          Modulo: submodule,
+          Accion: "Ver",
+          Permitido: defaultAllowed(role, parentModule, "Ver"),
+        });
+      }
+    }
+  }
+
+  return defaults.filter(
+    (row, index, self) =>
+      index ===
+      self.findIndex(
+        (candidate) =>
+          candidate.Rol === row.Rol &&
+          candidate.Modulo === row.Modulo &&
+          candidate.Accion === row.Accion,
+      ),
   );
 }
 
@@ -69,7 +108,7 @@ const readStoredPermissionsCached = unstable_cache(
   async () => readStoredPermissions(),
   ["platform", "permissions"],
   {
-    tags: [PLATFORM_CACHE_TAGS.permissions],
+    tags: [PLATFORM_CACHE_TAGS.permissions, PLATFORM_CACHE_TAGS.roles],
     revalidate: DEFAULT_CACHE_REVALIDATE_SECONDS,
   },
 );
@@ -96,7 +135,7 @@ const listPermissionsRequestCached = cache(async (): Promise<PermissionRow[]> =>
   return measureAsync(
     "permissions.listPermissions",
     async () => {
-      const defaults = buildDefaultPermissions();
+      const defaults = await buildDefaultPermissions();
       const stored = await readStoredPermissionsCached();
       return mergePermissions(defaults, stored);
     },

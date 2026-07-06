@@ -26,7 +26,9 @@ declare global {
   var __dbSchemaSistemaOtnAprobacionesInit: Promise<void> | undefined;
   var __dbSchemaSistemaOtnEntregasManualesInit: Promise<void> | undefined;
   var __dbSchemaCtSupervisoresInit: Promise<void> | undefined;
+  var __dbSchemaCtSupervisoresHistorialInit: Promise<void> | undefined;
   var __dbSchemaPerfilesTpInit: Promise<void> | undefined;
+  var __dbSchemaRolesInit: Promise<void> | undefined;
 }
 
 function buildConfig(): DbEnv {
@@ -184,6 +186,27 @@ AND COL_LENGTH('dbo.CtSupervisores', 'Estado') IS NULL
 BEGIN
   ALTER TABLE dbo.CtSupervisores
     ADD Estado NVARCHAR(50) NOT NULL CONSTRAINT DF_CtSupervisores_Estado DEFAULT (N'Ingresado');
+END;
+
+IF OBJECT_ID('dbo.CtSupervisores', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.CtSupervisores', 'CreadoPorUsuario') IS NULL
+BEGIN
+  ALTER TABLE dbo.CtSupervisores
+    ADD CreadoPorUsuario NVARCHAR(100) NOT NULL CONSTRAINT DF_CtSupervisores_CreadoPorUsuario DEFAULT ('');
+END;
+
+IF OBJECT_ID('dbo.CtSupervisores', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.CtSupervisores', 'CreadoPorNombre') IS NULL
+BEGIN
+  ALTER TABLE dbo.CtSupervisores
+    ADD CreadoPorNombre NVARCHAR(150) NOT NULL CONSTRAINT DF_CtSupervisores_CreadoPorNombre DEFAULT ('');
+END;
+
+IF OBJECT_ID('dbo.CtSupervisores', 'U') IS NOT NULL
+BEGIN
+  UPDATE dbo.CtSupervisores
+    SET CreadoPorNombre = Nombre
+  WHERE CreadoPorNombre = '';
 END;
 `;
 
@@ -355,6 +378,43 @@ BEGIN
       ON dbo.PerfilesTP(CreadoEn DESC, Id DESC)
       INCLUDE (Empresa, Nombre, CodigoAleatorio);
   END;
+END;
+`;
+
+const ENSURE_ROLES_SQL = `
+IF OBJECT_ID('dbo.Roles', 'U') IS NULL
+BEGIN
+  CREATE TABLE dbo.Roles (
+    Id INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Roles PRIMARY KEY,
+    Nombre NVARCHAR(50) NOT NULL,
+    EsSistema BIT NOT NULL CONSTRAINT DF_Roles_EsSistema DEFAULT (0),
+    Orden INT NOT NULL CONSTRAINT DF_Roles_Orden DEFAULT (0),
+    CreadoEn DATETIME2(0) NOT NULL CONSTRAINT DF_Roles_CreadoEn DEFAULT SYSUTCDATETIME(),
+    ActualizadoEn DATETIME2(0) NOT NULL CONSTRAINT DF_Roles_ActualizadoEn DEFAULT SYSUTCDATETIME()
+  );
+
+  CREATE UNIQUE INDEX UX_Roles_Nombre
+    ON dbo.Roles(Nombre);
+END;
+
+IF OBJECT_ID('dbo.Roles', 'U') IS NOT NULL
+BEGIN
+  ;WITH SeedRoles AS (
+    SELECT N'Administrador' AS Nombre, CAST(1 AS BIT) AS EsSistema, 1 AS Orden
+    UNION ALL SELECT N'Supervisor', CAST(1 AS BIT), 2
+    UNION ALL SELECT N'Operador', CAST(1 AS BIT), 3
+    UNION ALL SELECT N'Usuario', CAST(1 AS BIT), 4
+    UNION ALL SELECT N'RRHH', CAST(1 AS BIT), 5
+    UNION ALL SELECT N'Gerencia', CAST(1 AS BIT), 6
+  )
+  INSERT INTO dbo.Roles (Nombre, EsSistema, Orden)
+  SELECT seed.Nombre, seed.EsSistema, seed.Orden
+  FROM SeedRoles AS seed
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM dbo.Roles AS roles
+    WHERE roles.Nombre = seed.Nombre
+  );
 END;
 `;
 
@@ -632,6 +692,15 @@ async function ensureCtSupervisoresSchema(pool: sql.ConnectionPool) {
   }
 }
 
+async function ensureCtSupervisoresHistorialSchema(pool: sql.ConnectionPool) {
+  const hasHistory = await tableExists(pool, "dbo.CtSupervisoresHistorial");
+
+  if (!hasHistory) {
+    await runSqlFile(pool, "sql/create-ct-supervisores-historial-table.sql");
+    return;
+  }
+}
+
 async function ensurePerfilesTpSchema(pool: sql.ConnectionPool) {
   const hasPerfilesTp = await tableExists(pool, "dbo.PerfilesTP");
 
@@ -690,6 +759,14 @@ export async function ensureDatabaseSchema() {
           "utf8",
         );
         for (const batch of splitSqlBatches(permissionsSql)) {
+          await pool.request().batch(batch);
+        }
+
+        const rolesSql = await fs.readFile(
+          path.join(/* turbopackIgnore: true */ process.cwd(), "sql/create-roles-table.sql"),
+          "utf8",
+        );
+        for (const batch of splitSqlBatches(rolesSql)) {
           await pool.request().batch(batch);
         }
 
@@ -774,6 +851,20 @@ export async function ensureDatabaseSchema() {
 
   await global.__dbSchemaCtSupervisoresInit;
 
+  if (!global.__dbSchemaCtSupervisoresHistorialInit) {
+    global.__dbSchemaCtSupervisoresHistorialInit = (async () => {
+      const pool = await new sql.ConnectionPool(buildConfig()).connect();
+
+      try {
+        await ensureCtSupervisoresHistorialSchema(pool);
+      } finally {
+        await pool.close();
+      }
+    })();
+  }
+
+  await global.__dbSchemaCtSupervisoresHistorialInit;
+
   if (!global.__dbSchemaPerfilesTpInit) {
     global.__dbSchemaPerfilesTpInit = (async () => {
       const pool = await new sql.ConnectionPool(buildConfig()).connect();
@@ -787,4 +878,20 @@ export async function ensureDatabaseSchema() {
   }
 
   await global.__dbSchemaPerfilesTpInit;
+
+  if (!global.__dbSchemaRolesInit) {
+    global.__dbSchemaRolesInit = (async () => {
+      const pool = await new sql.ConnectionPool(buildConfig()).connect();
+
+      try {
+        for (const batch of splitSqlBatches(ENSURE_ROLES_SQL)) {
+          await pool.request().batch(batch);
+        }
+      } finally {
+        await pool.close();
+      }
+    })();
+  }
+
+  await global.__dbSchemaRolesInit;
 }

@@ -36,7 +36,30 @@ export default async function ProtectedLayout({
   const canSeeMonitoreo = canAccess(permissions, session.Rol, "Monitoreo");
   const canSeePermisos = canAccess(permissions, session.Rol, "Permisos");
   const canSeeAdministracion = canAccess(permissions, session.Rol, "Administración");
+  const canSeeAsistencia = canAccess(permissions, session.Rol, "Asistencia");
   const canSeeSistemaOtnImport = canSeeAdministracion || canSeePermisos;
+  const canSeeDisponibleOtn = canAccess(permissions, session.Rol, "Disponible OTN");
+  const canSeeDisponibleCc = canAccess(permissions, session.Rol, "Disponible CC");
+  const canSeeFichaOtn = canAccess(permissions, session.Rol, "Ficha OTN");
+  const canSeeStockActual = canAccess(permissions, session.Rol, "Stock Actual");
+  const canSeeBusquedaEnOc = canAccess(permissions, session.Rol, "Busqueda en OC");
+  const canSeeActivosFijos = canAccess(permissions, session.Rol, "Activos Fijos");
+  const canSeePerfilesTp = canAccess(permissions, session.Rol, "Perfiles TP");
+  const canSeeRoles = canAccess(permissions, session.Rol, "Roles");
+  const canSeeCtSupervisores = canAccess(permissions, session.Rol, "CT Supervisores");
+  const canSeeUsersConfig = canSeeUsuarios;
+  const canSeeConfigSection =
+    canSeeUsuarios ||
+    canSeeLog ||
+    canSeeMonitoreo ||
+    canSeeSistemaOtnImport ||
+    canSeePermisos ||
+    canSeeRoles;
+  const canSeeProduccionSection = canSeeProduccion || canSeeDisponibleOtn || canSeeDisponibleCc;
+  const canSeeSistemaOtnSection = canSeeSistemaOtn || canSeeFichaOtn;
+  const canSeeBodegaSection = canSeeBodega || canSeeStockActual || canSeeBusquedaEnOc;
+  const canSeeAdministracionSection = canSeeAdministracion || canSeeActivosFijos || canSeePerfilesTp;
+  const canSeeAsistenciaSection = canSeeAsistencia || canSeeCtSupervisores;
   const warmupRoutes = [
     canSeeProduccion ? "/produccion/disponible-otn" : null,
     canSeeProduccion ? "/produccion/disponible-cc" : null,
@@ -51,6 +74,18 @@ export default async function ProtectedLayout({
     canSeeMonitoreo ? "/configuracion/monitoreo" : null,
     canSeeSistemaOtnImport ? "/configuracion/importar-sistema-otn" : null,
     canSeePermisos ? "/configuracion/permisos" : null,
+    canSeePermisos ? "/configuracion/permisos/roles" : null,
+    canSeeAsistencia ? "/asistencia/ct-supervisores" : null,
+    canSeeDisponibleOtn ? "/produccion/disponible-otn" : null,
+    canSeeDisponibleCc ? "/produccion/disponible-cc" : null,
+    canSeeFichaOtn ? "/produccion/sistema-otn/ficha-otn" : null,
+    canSeeStockActual ? "/bodega/stock-actual" : null,
+    canSeeBusquedaEnOc ? "/bodega/busqueda-en-oc" : null,
+    canSeeActivosFijos ? "/administracion/activos-fijos" : null,
+    canSeePerfilesTp ? "/administracion/perfiles-tp" : null,
+    canSeeUsersConfig ? "/usuarios" : null,
+    canSeeRoles ? "/configuracion/permisos/roles" : null,
+    canSeeCtSupervisores ? "/asistencia/ct-supervisores" : null,
   ].filter((value): value is string => Boolean(value));
   const warmupApiUrls = [
     canSeeSistemaOtn ? "/api/produccion/sistema-otn" : null,
@@ -90,7 +125,43 @@ export default async function ProtectedLayout({
           canSeeMonitoreo={canSeeMonitoreo}
           canSeeSistemaOtnImport={canSeeSistemaOtnImport}
           canSeePermisos={canSeePermisos}
+          canSeeAsistencia={canSeeAsistencia}
           canSeeAdministracion={canSeeAdministracion}
+          navVisibility={{
+            produccion: {
+              section: canSeeProduccionSection,
+              disponibleOtn: canSeeDisponibleOtn,
+              disponibleCc: canSeeDisponibleCc,
+            },
+            sistemaOtn: {
+              section: canSeeSistemaOtnSection,
+              sistemaOtn: canSeeSistemaOtn,
+              fichaOtn: canSeeFichaOtn,
+            },
+            bodega: {
+              section: canSeeBodegaSection,
+              stockActual: canSeeStockActual,
+              busquedaEnOc: canSeeBusquedaEnOc,
+            },
+            administracion: {
+              section: canSeeAdministracionSection,
+              activosFijos: canSeeActivosFijos,
+              perfilesTp: canSeePerfilesTp,
+            },
+            configuracion: {
+              section: canSeeConfigSection,
+              usuarios: canSeeUsuarios,
+              log: canSeeLog,
+              monitoreo: canSeeMonitoreo,
+              importarSistemaOtn: canSeeSistemaOtnImport,
+              permisos: canSeePermisos,
+              roles: canSeeRoles,
+            },
+            asistencia: {
+              section: canSeeAsistenciaSection,
+              ctSupervisores: canSeeCtSupervisores,
+            },
+          }}
         />
 
         <SessionCard name={session.Nombre} role={session.Rol} />

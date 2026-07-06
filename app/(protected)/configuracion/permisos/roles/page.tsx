@@ -2,12 +2,12 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AUTH_COOKIE_NAME, getSessionUserByToken } from "@/lib/auth-sql";
 import { canAccess, listPermissions } from "@/lib/permissions-sql";
-import { listRoles } from "@/lib/roles-sql";
-import { PermisosManager } from "./permisos-manager";
+import { listRoleRows } from "@/lib/roles-sql";
+import { RolesManager } from "./roles-manager";
 
 export const dynamic = "force-dynamic";
 
-export default async function PermisosPage() {
+export default async function RolesPage() {
   const cookieStore = await cookies();
   const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
   const session = token ? await getSessionUserByToken(token) : null;
@@ -21,8 +21,7 @@ export default async function PermisosPage() {
     redirect("/forbidden");
   }
 
-  const roles = await listRoles();
-  const permissions = permissionRows;
+  const roles = await listRoleRows();
 
   return (
     <section className="grid gap-6">
@@ -31,16 +30,15 @@ export default async function PermisosPage() {
           Configuración
         </p>
         <h2 className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">
-          Permisos
+          Roles
         </h2>
         <p className="mt-4 max-w-3xl text-base leading-7 text-slate-600">
-          Aquí puedes definir la estructura de permisos y accesos de la plataforma.
-          Esta versión inicial permite administrar roles, módulos y acciones desde una
-          matriz editable.
+          Crea nuevos roles para utilizarlos después en Usuarios y en la matriz de
+          Permisos.
         </p>
       </div>
 
-      <PermisosManager initialPermissions={permissions} roles={roles} />
+      <RolesManager initialRoles={roles} />
     </section>
   );
 }

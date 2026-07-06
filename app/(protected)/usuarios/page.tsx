@@ -1,4 +1,5 @@
 import { listUsuarios } from "@/lib/usuarios-sql";
+import { listRoles } from "@/lib/roles-sql";
 import { UsuariosManager } from "./usuarios-manager";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -22,6 +23,7 @@ export default async function UsuariosPage() {
   }
 
   const rows = await listUsuarios();
+  const roles = await listRoles();
 
   return (
     <section className="grid gap-6">
@@ -40,7 +42,7 @@ export default async function UsuariosPage() {
           .
         </p>
 
-        <UsuariosManager initialUsers={rows} />
+        <UsuariosManager initialUsers={rows} initialRoles={roles} />
       </div>
     </section>
   );

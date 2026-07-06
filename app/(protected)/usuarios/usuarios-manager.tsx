@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ROLES } from "@/lib/permissions-config";
 import { formatDateTimeDdMmYyyy } from "@/lib/date-format";
 import type { UsuarioRow } from "@/lib/usuarios-sql";
 
@@ -37,13 +36,22 @@ async function readJsonOrText(response: Response) {
   return { error: await response.text() };
 }
 
-export function UsuariosManager({ initialUsers }: { initialUsers: UsuarioRow[] }) {
+export function UsuariosManager({
+  initialUsers,
+  initialRoles,
+}: {
+  initialUsers: UsuarioRow[];
+  initialRoles: string[];
+}) {
   const [users, setUsers] = useState(initialUsers);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const roleOptions = useMemo(() => [...new Set([form.rol, ...ROLES])], [form.rol]);
+  const roleOptions = useMemo(
+    () => [...new Set([form.rol, ...initialRoles])],
+    [form.rol, initialRoles],
+  );
 
   const selectedUser = useMemo(
     () => users.find((user) => user.Id === selectedId) ?? null,

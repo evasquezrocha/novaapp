@@ -5,6 +5,8 @@ BEGIN
     Correlativo NVARCHAR(50) NOT NULL CONSTRAINT DF_CtSupervisores_Correlativo DEFAULT (''),
     Estado NVARCHAR(50) NOT NULL CONSTRAINT DF_CtSupervisores_Estado DEFAULT (N'Ingresado'),
     Nombre NVARCHAR(150) NOT NULL,
+    CreadoPorUsuario NVARCHAR(100) NOT NULL CONSTRAINT DF_CtSupervisores_CreadoPorUsuario DEFAULT (''),
+    CreadoPorNombre NVARCHAR(150) NOT NULL CONSTRAINT DF_CtSupervisores_CreadoPorNombre DEFAULT (''),
     Lugar NVARCHAR(150) NOT NULL,
     Entrada DATETIME2(0) NOT NULL,
     Salida DATETIME2(0) NOT NULL,
@@ -15,6 +17,6 @@ BEGIN
 
   CREATE INDEX IX_CtSupervisores_CreadoEn_Id
     ON dbo.CtSupervisores(CreadoEn DESC, Id DESC)
-    INCLUDE (Correlativo, Estado, Nombre, Lugar, Entrada, Salida, Dias);
+    INCLUDE (Correlativo, Estado, Nombre, CreadoPorUsuario, CreadoPorNombre, Lugar, Entrada, Salida, Dias);
 END;
 GO

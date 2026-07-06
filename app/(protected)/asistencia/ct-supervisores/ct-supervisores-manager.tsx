@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { formatDateTimeDdMmYyyy } from "@/lib/date-format";
 import type { CtSupervisoresEstado, CtSupervisoresRow } from "@/lib/ct-supervisores-sql";
 
@@ -19,10 +19,32 @@ type FormState = {
   rows: DraftRow[];
 };
 
+type HistoryRow = {
+  Id: number;
+  Correlativo: string;
+  Accion: string;
+  EditadoPorUsuario: string;
+  EditadoPorNombre: string;
+  EditadoPorRol: string;
+  EditadoEn: string;
+  CambiosJson: string;
+  Cambios?: {
+    beforeRows: Array<Record<string, string | number>>;
+    afterRows: Array<Record<string, string | number>>;
+    changes: Array<{
+      row: number;
+      field: string;
+      before: string | null;
+      after: string | null;
+    }>;
+  } | null;
+};
+
 type ApiResponse = {
   error?: string;
   rows?: CtSupervisoresRow[];
   nextCorrelativo?: string;
+  history?: HistoryRow[];
 };
 
 const CT_SUPERVISORES_ESTADOS: CtSupervisoresEstado[] = [
@@ -80,21 +102,19 @@ function createEmptyForm(nombre: string, correlativo: string): FormState {
 
 function toInputDateTime(value: string) {
   const match = value.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/);
+  return match ? `${match[1]}T${match[2]}` : value.slice(0, 16);
+}
 
-  if (match) {
-    return `${match[1]}T${match[2]}`;
-  }
-
-  return value.slice(0, 16);
+function formatHistoryDateTime(value: string) {
+  const match = value.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/);
+  return match ? `${match[1]} ${match[2]}` : value.slice(0, 16).replace("T", " ");
 }
 
 async function readJsonOrText(response: Response) {
   const contentType = response.headers.get("content-type") ?? "";
-
   if (contentType.includes("application/json")) {
     return (await response.json()) as ApiResponse;
   }
-
   return { error: await response.text() };
 }
 
@@ -150,23 +170,82 @@ function XIcon() {
 
 export function CtSupervisoresManager({
   sessionName,
+  sessionUser,
+  sessionRole,
   initialRows,
   initialNextCorrelativo,
 }: {
   sessionName: string;
+  sessionUser: string;
+  sessionRole: string;
   initialRows: CtSupervisoresRow[];
   initialNextCorrelativo: string;
 }) {
   const [entries, setEntries] = useState(initialRows);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<"registros" | "historial">("registros");
   const [nextCorrelativo, setNextCorrelativo] = useState(initialNextCorrelativo);
   const [form, setForm] = useState<FormState>(() => createEmptyForm(sessionName, initialNextCorrelativo));
+  const [historyRows, setHistoryRows] = useState<HistoryRow[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isPrivilegedRole =
+    sessionRole === "Administrador" || sessionRole === "RRHH" || sessionRole === "Gerencia";
   const isEditing = selectedId !== null;
+  const selectedEntry = entries.find((entry) => entry.Id === selectedId) ?? null;
   const totalFormDays = form.rows.reduce((total, row) => total + Number(row.dias), 0);
   const estadoTone = getEstadoTone(form.estado);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadHistory() {
+      if (activeTab !== "historial" || !selectedId) {
+        setHistoryRows([]);
+        setHistoryError(null);
+        setHistoryLoading(false);
+        return;
+      }
+
+      setHistoryLoading(true);
+      setHistoryError(null);
+
+      try {
+        const response = await fetch(`/api/asistencia/ct-supervisores/${selectedId}`, {
+          cache: "no-store",
+        });
+        const payload = (await readJsonOrText(response)) as ApiResponse;
+
+        if (!response.ok) {
+          throw new Error(payload.error ?? "No fue posible cargar el historial.");
+        }
+
+        if (!cancelled) {
+          setHistoryRows(payload.history ?? []);
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setHistoryRows([]);
+          setHistoryError(
+            loadError instanceof Error ? loadError.message : "No fue posible cargar el historial.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setHistoryLoading(false);
+        }
+      }
+    }
+
+    void loadHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, selectedId]);
 
   function formatTotalDays(total: number) {
     const rounded = Math.round(total * 100) / 100;
@@ -177,15 +256,49 @@ export function CtSupervisoresManager({
 
   function resetForm() {
     setSelectedId(null);
+    setActiveTab("registros");
     setForm(createEmptyForm(sessionName, nextCorrelativo));
     setError(null);
+    setHistoryRows([]);
+    setHistoryError(null);
   }
 
   function startCreate() {
     resetForm();
   }
 
+  function canEditEntry(entry: CtSupervisoresRow) {
+    if (isPrivilegedRole) {
+      return true;
+    }
+
+    const isOwner =
+      entry.CreadoPorUsuario === sessionUser ||
+      entry.CreadoPorNombre === sessionName ||
+      entry.Nombre === sessionName;
+
+    return isOwner && entry.Estado === "Ingresado";
+  }
+
+  function canDeleteEntry(entry: CtSupervisoresRow) {
+    return canEditEntry(entry);
+  }
+
+  function canChangeEntryState(entry: CtSupervisoresRow) {
+    if (sessionRole === "Gerencia") {
+      return entry.Estado !== "Ingresado a Vacaciones" && entry.Estado !== "Ingresado a Liquidación";
+    }
+
+    return isPrivilegedRole;
+  }
+
   function startEdit(entry: CtSupervisoresRow) {
+    if (!canEditEntry(entry)) {
+      return;
+    }
+
+    setActiveTab("registros");
+
     const rows = entries
       .filter((current) => current.Correlativo === entry.Correlativo)
       .sort((left, right) => left.Id - right.Id);
@@ -217,6 +330,12 @@ export function CtSupervisoresManager({
     setError(null);
   }
 
+  function openHistory(entry: CtSupervisoresRow) {
+    setSelectedId(entry.Id);
+    setActiveTab("historial");
+    setError(null);
+  }
+
   async function refreshEntries() {
     const response = await fetch("/api/asistencia/ct-supervisores", {
       cache: "no-store",
@@ -237,12 +356,12 @@ export function CtSupervisoresManager({
   }
 
   async function handleDelete() {
-    if (!selectedId) {
+    if (!selectedId || !selectedEntry || !canDeleteEntry(selectedEntry)) {
       return;
     }
 
     const confirmed = window.confirm(
-      "¿Eliminar este formulario completo? Se borrarán todas las líneas asociadas al correlativo.",
+      "¿Eliminar este formulario completo? Se borraran todas las lineas asociadas al correlativo.",
     );
 
     if (!confirmed) {
@@ -265,7 +384,10 @@ export function CtSupervisoresManager({
 
       const next = await refreshEntries();
       setSelectedId(null);
+      setActiveTab("registros");
       setForm(createEmptyForm(sessionName, next ?? nextCorrelativo));
+      setHistoryRows([]);
+      setHistoryError(null);
     } catch (deleteError) {
       setError(
         deleteError instanceof Error ? deleteError.message : "No fue posible eliminar el formulario.",
@@ -350,7 +472,10 @@ export function CtSupervisoresManager({
 
       const next = await refreshEntries();
       setSelectedId(null);
+      setActiveTab("registros");
       setForm(createEmptyForm(sessionName, next ?? nextCorrelativo));
+      setHistoryRows([]);
+      setHistoryError(null);
     } catch (submissionError) {
       setError(
         submissionError instanceof Error
@@ -360,6 +485,20 @@ export function CtSupervisoresManager({
     } finally {
       setSaving(false);
     }
+  }
+
+  const canChangeSelectedState = selectedEntry ? canChangeEntryState(selectedEntry) : true;
+
+  function renderChangeValue(value: string | null) {
+    if (!value) {
+      return "Sin valor";
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(value)) {
+      return formatHistoryDateTime(value);
+    }
+
+    return value ?? "Sin valor";
   }
 
   return (
@@ -381,7 +520,7 @@ export function CtSupervisoresManager({
                 <button
                   type="button"
                   onClick={handleDelete}
-                  disabled={saving}
+                  disabled={saving || !selectedEntry || !canDeleteEntry(selectedEntry)}
                   className="inline-flex items-center gap-2 rounded-full border border-rose-200 px-3 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <TrashIcon />
@@ -431,9 +570,7 @@ export function CtSupervisoresManager({
             <label className="grid gap-2 text-sm font-medium text-slate-700">
               <div className="flex items-center gap-2">
                 <span>Estado</span>
-                <span
-                  className={`inline-flex items-end gap-2 rounded-full border px-3 py-1.5 ${estadoTone.badge}`}
-                >
+                <span className={`inline-flex items-end gap-2 rounded-full border px-3 py-1.5 ${estadoTone.badge}`}>
                   <span className="text-xs font-semibold uppercase tracking-[0.18em]">
                     Total dias
                   </span>
@@ -444,6 +581,7 @@ export function CtSupervisoresManager({
               </div>
               <select
                 value={form.estado}
+                disabled={isEditing && !canChangeSelectedState}
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
@@ -486,10 +624,7 @@ export function CtSupervisoresManager({
 
             <div className="mt-4 space-y-3">
               {form.rows.map((row, index) => (
-                <div
-                  key={row.key}
-                  className="grid gap-3 xl:grid-cols-[1.3fr_1.1fr_1.1fr_110px_auto]"
-                >
+                <div key={row.key} className="grid gap-3 xl:grid-cols-[1.3fr_1.1fr_1.1fr_110px_auto]">
                   <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
                     Lugar
                     <input
@@ -586,10 +721,10 @@ export function CtSupervisoresManager({
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.3em] text-amber-700">
-              Registros
+              CT Supervisores
             </p>
             <h3 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
-              Historial de CT Supervisores
+              Registros e historial
             </h3>
           </div>
           <button
@@ -601,69 +736,180 @@ export function CtSupervisoresManager({
           </button>
         </div>
 
-        <div className="mt-6 overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead className="bg-slate-50 text-left uppercase tracking-[0.16em] text-slate-500">
-              <tr>
-                <th className="px-3 py-3">Correlativo</th>
-                <th className="px-3 py-3">Estado</th>
-                <th className="px-3 py-3">Nombre</th>
-                <th className="px-3 py-3">Lugar</th>
-                <th className="px-3 py-3">Entrada</th>
-                <th className="px-3 py-3">Salida</th>
-                <th className="px-3 py-3">Dias</th>
-                <th className="px-3 py-3">Creado</th>
-                <th className="px-3 py-3 text-right">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {entries.length === 0 ? (
+        <div className="mt-6 inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
+          <button
+            type="button"
+            onClick={() => setActiveTab("registros")}
+            className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+              activeTab === "registros"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            Registros
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("historial");
+              if (selectedId === null && entries.length > 0) {
+                setSelectedId(entries[0].Id);
+              }
+            }}
+            className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+              activeTab === "historial"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            Control de cambios
+          </button>
+        </div>
+
+        {activeTab === "registros" ? (
+          <div className="mt-6 overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50 text-left uppercase tracking-[0.16em] text-slate-500">
                 <tr>
-                  <td colSpan={9} className="px-3 py-8 text-center text-slate-500">
-                    No hay registros aun.
-                  </td>
+                  <th className="px-3 py-3">Correlativo</th>
+                  <th className="px-3 py-3">Estado</th>
+                  <th className="px-3 py-3">Nombre</th>
+                  <th className="px-3 py-3">Lugar</th>
+                  <th className="px-3 py-3">Entrada</th>
+                  <th className="px-3 py-3">Salida</th>
+                  <th className="px-3 py-3">Dias</th>
+                  <th className="px-3 py-3">Creado</th>
+                  <th className="px-3 py-3 text-right">Acciones</th>
                 </tr>
-              ) : (
-                entries.map((entry) => (
-                  <tr key={entry.Id} className="align-top">
-                    <td className="px-3 py-3 font-medium text-slate-900">{entry.Correlativo}</td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getEstadoTone(entry.Estado).badge}`}
-                        >
-                          {entry.Estado}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 text-slate-700">{entry.Nombre}</td>
-                    <td className="px-3 py-3 text-slate-700">{entry.Lugar}</td>
-                    <td className="px-3 py-3 text-slate-700">
-                      {formatDateTimeDdMmYyyy(entry.Entrada)}
-                    </td>
-                    <td className="px-3 py-3 text-slate-700">
-                      {formatDateTimeDdMmYyyy(entry.Salida)}
-                    </td>
-                    <td className="px-3 py-3 text-slate-700">{entry.Dias}</td>
-                    <td className="px-3 py-3 text-slate-700">
-                      {formatDateTimeDdMmYyyy(entry.CreadoEn)}
-                    </td>
-                    <td className="px-3 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => startEdit(entry)}
-                        className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                      >
-                        <PencilIcon />
-                        Editar formulario
-                      </button>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {entries.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-3 py-8 text-center text-slate-500">
+                      No hay registros aun.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  entries.map((entry) => (
+                    <tr key={entry.Id} className="align-top">
+                      <td className="px-3 py-3 font-medium text-slate-900">{entry.Correlativo}</td>
+                      <td className="px-3 py-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getEstadoTone(entry.Estado).badge}`}
+                          >
+                            {entry.Estado}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 text-slate-700">{entry.Nombre}</td>
+                      <td className="px-3 py-3 text-slate-700">{entry.Lugar}</td>
+                      <td className="px-3 py-3 text-slate-700">{formatDateTimeDdMmYyyy(entry.Entrada)}</td>
+                      <td className="px-3 py-3 text-slate-700">{formatDateTimeDdMmYyyy(entry.Salida)}</td>
+                      <td className="px-3 py-3 text-slate-700">{entry.Dias}</td>
+                      <td className="px-3 py-3 text-slate-700">{formatDateTimeDdMmYyyy(entry.CreadoEn)}</td>
+                      <td className="px-3 py-3 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openHistory(entry)}
+                            className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                          >
+                            Ver historial
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => startEdit(entry)}
+                            disabled={!canEditEntry(entry)}
+                            className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <PencilIcon />
+                            Editar formulario
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-500">
+                  Control de cambios
+                </p>
+                <p className="mt-1 text-sm text-slate-600">
+                  {selectedEntry
+                    ? `Historial del correlativo ${selectedEntry.Correlativo}.`
+                    : "Selecciona un formulario para ver quien lo cambio, cuando y que campos toco."}
+                </p>
+              </div>
+              {selectedEntry ? (
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  {historyRows.length} cambios
+                </span>
+              ) : null}
+            </div>
+
+            {!selectedEntry ? (
+              <p className="mt-4 text-sm text-slate-500">
+                Abre un formulario desde la pestaña de registros para ver su historial.
+              </p>
+            ) : historyLoading ? (
+              <p className="mt-4 text-sm text-slate-500">Cargando historial...</p>
+            ) : historyError ? (
+              <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {historyError}
+              </p>
+            ) : historyRows.length === 0 ? (
+              <p className="mt-4 text-sm text-slate-500">No hay cambios registrados para este formulario.</p>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {historyRows.map((entry) => {
+                  const changes = entry.Cambios?.changes ?? [];
+
+                  return (
+                    <div key={entry.Id} className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">{entry.Accion}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {entry.EditadoPorNombre} · {entry.EditadoPorUsuario} · {entry.EditadoPorRol}
+                        </p>
+                      </div>
+                      <p className="text-xs font-medium text-slate-500">
+                        {formatHistoryDateTime(entry.EditadoEn)}
+                      </p>
+                    </div>
+
+                      <div className="mt-3">
+                        {changes.length === 0 ? (
+                          <p className="text-sm text-slate-500">No se detectaron cambios detallados.</p>
+                        ) : (
+                          <ul className="space-y-2 text-sm text-slate-700">
+                            {changes.map((change, index) => (
+                              <li key={`${entry.Id}-${index}`} className="rounded-xl bg-slate-50 px-3 py-2">
+                                <span className="font-semibold text-slate-900">
+                                  Fila {change.row} - {change.field}:
+                                </span>{" "}
+                                {renderChangeValue(change.before)}{" "}
+                                <span className="text-slate-400">-&gt;</span>{" "}
+                                {renderChangeValue(change.after)}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { AUTH_COOKIE_NAME, getSessionUserByToken } from "@/lib/auth-sql";
+import { canAccess, listPermissions } from "@/lib/permissions-sql";
 import {
   CT_SUPERVISORES_ESTADOS,
-  createCtSupervisoresRows,
   getNextCtSupervisoresCorrelativo,
   listCtSupervisoresRows,
 } from "@/lib/ct-supervisores-sql";
+import { createCtSupervisoresRowsWithAudit } from "@/lib/ct-supervisores-audit-sql";
 
 export const dynamic = "force-dynamic";
 
@@ -21,8 +22,13 @@ export async function GET() {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
 
+  const permissions = await listPermissions();
+  if (!canAccess(permissions, session.Rol, "Asistencia")) {
+    return NextResponse.json({ error: "No autorizado." }, { status: 403 });
+  }
+
   try {
-    const rows = await listCtSupervisoresRows();
+    const rows = await listCtSupervisoresRows(session);
     const nextCorrelativo = await getNextCtSupervisoresCorrelativo();
     return NextResponse.json({ rows, nextCorrelativo });
   } catch (error) {
@@ -38,6 +44,11 @@ export async function POST(request: Request) {
 
   if (!session) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
+  }
+
+  const permissions = await listPermissions();
+  if (!canAccess(permissions, session.Rol, "Asistencia")) {
+    return NextResponse.json({ error: "No autorizado." }, { status: 403 });
   }
 
   try {
@@ -68,7 +79,7 @@ export async function POST(request: Request) {
 
     const allowedStates = new Set(CT_SUPERVISORES_ESTADOS);
 
-  if (!estado || !allowedStates.has(estado as (typeof CT_SUPERVISORES_ESTADOS)[number])) {
+    if (!estado || !allowedStates.has(estado as (typeof CT_SUPERVISORES_ESTADOS)[number])) {
       throw new ValidationError("Estado es obligatorio.");
     }
 
@@ -98,6 +109,8 @@ export async function POST(request: Request) {
         Correlativo: correlativo,
         Estado: estado as (typeof CT_SUPERVISORES_ESTADOS)[number],
         Nombre: body.nombre?.trim() || session.Nombre,
+        CreadoPorUsuario: session.Usuario,
+        CreadoPorNombre: session.Nombre,
         Lugar: lugar,
         Entrada: entrada,
         Salida: salida,
@@ -105,7 +118,7 @@ export async function POST(request: Request) {
       };
     });
 
-    await createCtSupervisoresRows(normalizedRows);
+    await createCtSupervisoresRowsWithAudit(normalizedRows, session);
 
     const nextCorrelativo = await getNextCtSupervisoresCorrelativo();
 
