@@ -1,6 +1,7 @@
 import sql from "mssql";
 import { createHash, randomBytes, pbkdf2, timingSafeEqual } from "node:crypto";
 import { cache } from "react";
+import { ensureDatabaseSchema } from "@/lib/db-schema";
 import { measureAsync } from "@/lib/server-performance";
 import { findUsuarioForLoginByUsuario } from "@/lib/usuarios-sql";
 
@@ -39,6 +40,15 @@ type AuthEnv = {
 
 const SESSION_DAYS = 7;
 export const AUTH_COOKIE_NAME = "nova_session";
+const LOGIN_ATTEMPT_THRESHOLD = 5;
+const LOGIN_ATTEMPT_WINDOW_MINUTES = 15;
+const LOGIN_LOCK_MINUTES = 15;
+
+type LoginAttemptRow = {
+  IntentosFallidos: number;
+  PrimeraFallaEn: string | Date | null;
+  BloqueadoHasta: string | Date | null;
+};
 
 declare global {
   var __authPool: Promise<sql.ConnectionPool> | undefined;
@@ -75,6 +85,8 @@ function buildConfig(): AuthEnv {
 }
 
 export async function getAuthPool() {
+  await ensureDatabaseSchema();
+
   if (!global.__authPool) {
     global.__authPool = sql.connect(buildConfig());
   }
@@ -124,6 +136,144 @@ function hashToken(token: string) {
 
 function toSqlHex(buffer: Buffer) {
   return `0x${buffer.toString("hex")}`;
+}
+
+function normalizeLoginKey(value: string) {
+  return value.trim();
+}
+
+function normalizeIpAddress(ipAddress: string | null) {
+  return ipAddress?.trim() || "";
+}
+
+function isBlockedUntil(blockedUntil: string | Date | null) {
+  if (!blockedUntil) {
+    return false;
+  }
+
+  return new Date(blockedUntil).getTime() > Date.now();
+}
+
+function getRetryAfterSeconds(blockedUntil: string | Date) {
+  return Math.max(1, Math.ceil((new Date(blockedUntil).getTime() - Date.now()) / 1000));
+}
+
+function isWithinWindow(firstFailureAt: string | Date, now: Date) {
+  const first = new Date(firstFailureAt).getTime();
+  return now.getTime() - first <= LOGIN_ATTEMPT_WINDOW_MINUTES * 60 * 1000;
+}
+
+async function getLoginAttemptRow(usuario: string, ipAddress: string | null) {
+  const pool = await getAuthPool();
+  const result = await pool
+    .request()
+    .input("usuario", normalizeLoginKey(usuario))
+    .input("ipAddress", normalizeIpAddress(ipAddress))
+    .query<LoginAttemptRow>(`
+      SELECT
+        IntentosFallidos,
+        PrimeraFallaEn,
+        BloqueadoHasta
+      FROM dbo.LoginIntentos
+      WHERE Usuario = @usuario
+        AND DireccionIp = @ipAddress
+    `);
+
+  return result.recordset[0] ?? null;
+}
+
+export async function getLoginAttemptBlock(usuario: string, ipAddress: string | null) {
+  const row = await getLoginAttemptRow(usuario, ipAddress);
+  if (!row || !isBlockedUntil(row.BloqueadoHasta)) {
+    return null;
+  }
+
+  return {
+    blockedUntil: new Date(row.BloqueadoHasta as string | Date),
+    retryAfterSeconds: getRetryAfterSeconds(row.BloqueadoHasta as string | Date),
+  };
+}
+
+export async function recordFailedLoginAttempt(usuario: string, ipAddress: string | null) {
+  const pool = await getAuthPool();
+  const normalizedUsuario = normalizeLoginKey(usuario);
+  const normalizedIp = normalizeIpAddress(ipAddress);
+  const now = new Date();
+  const row = await getLoginAttemptRow(normalizedUsuario, normalizedIp);
+
+  if (!row) {
+    const blockedUntil =
+      LOGIN_ATTEMPT_THRESHOLD <= 1
+        ? new Date(now.getTime() + LOGIN_LOCK_MINUTES * 60 * 1000)
+        : null;
+
+    await pool
+      .request()
+      .input("usuario", normalizedUsuario)
+      .input("ipAddress", normalizedIp)
+      .input("now", sql.DateTime2, now)
+      .input("blockedUntil", sql.DateTime2, blockedUntil)
+      .query(`
+        INSERT INTO dbo.LoginIntentos
+          (Usuario, DireccionIp, IntentosFallidos, PrimeraFallaEn, UltimaFallaEn, BloqueadoHasta, CreadoEn, ActualizadoEn)
+        VALUES
+          (@usuario, @ipAddress, 1, @now, @now, @blockedUntil, @now, @now)
+      `);
+
+    return {
+      attempts: 1,
+      blockedUntil,
+      retryAfterSeconds: blockedUntil ? getRetryAfterSeconds(blockedUntil) : undefined,
+    };
+  }
+
+  const withinWindow = row.PrimeraFallaEn ? isWithinWindow(row.PrimeraFallaEn, now) : false;
+  const attempts = withinWindow ? row.IntentosFallidos + 1 : 1;
+  const blockedUntil =
+    attempts >= LOGIN_ATTEMPT_THRESHOLD
+      ? new Date(now.getTime() + LOGIN_LOCK_MINUTES * 60 * 1000)
+      : null;
+
+  await pool
+    .request()
+    .input("usuario", sql.NVarChar(100), normalizedUsuario)
+    .input("ipAddress", sql.NVarChar(45), normalizedIp)
+    .input("now", sql.DateTime2, now)
+    .input("attempts", sql.Int, attempts)
+    .input("blockedUntil", sql.DateTime2, blockedUntil)
+    .query(`
+      UPDATE dbo.LoginIntentos
+      SET
+        IntentosFallidos = @attempts,
+        PrimeraFallaEn = CASE WHEN @attempts = 1 THEN @now ELSE PrimeraFallaEn END,
+        UltimaFallaEn = @now,
+        BloqueadoHasta = @blockedUntil,
+        ActualizadoEn = @now
+      WHERE Usuario = @usuario
+        AND DireccionIp = @ipAddress
+    `);
+
+  return {
+    attempts,
+    blockedUntil,
+    retryAfterSeconds: blockedUntil ? getRetryAfterSeconds(blockedUntil) : undefined,
+  };
+}
+
+export async function clearLoginAttempts(usuario: string, ipAddress: string | null) {
+  const pool = await getAuthPool();
+  const normalizedUsuario = normalizeLoginKey(usuario);
+  const normalizedIp = normalizeIpAddress(ipAddress);
+
+  await pool
+    .request()
+    .input("usuario", normalizedUsuario)
+    .input("ipAddress", normalizedIp)
+    .query(`
+      DELETE FROM dbo.LoginIntentos
+      WHERE Usuario = @usuario
+        AND DireccionIp = @ipAddress
+    `);
 }
 
 export async function authenticateUser(usuario: string, password: string) {
@@ -213,6 +363,20 @@ export async function revokeSession(token: string) {
       UPDATE dbo.Sesiones
       SET RevocadoEn = SYSUTCDATETIME()
       WHERE TokenHash = ${toSqlHex(tokenHash)}
+    `);
+}
+
+export async function revokeSessionsForUser(userId: number) {
+  const pool = await getAuthPool();
+
+  await pool
+    .request()
+    .input("userId", sql.Int, userId)
+    .query(`
+      UPDATE dbo.Sesiones
+      SET RevocadoEn = SYSUTCDATETIME()
+      WHERE UsuarioId = @userId
+        AND RevocadoEn IS NULL
     `);
 }
 

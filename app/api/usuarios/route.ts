@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     const usuario = body.usuario?.trim();
     const correo = body.correo?.trim();
     const rol = body.rol?.trim();
-    const password = body.password?.trim();
+    const password = body.password;
 
     if (!nombre || !usuario || !correo || !rol || !password) {
       return NextResponse.json(

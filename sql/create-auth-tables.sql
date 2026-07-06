@@ -16,3 +16,25 @@ BEGIN
   CREATE INDEX IX_Sesiones_ExpiraEn ON dbo.Sesiones(ExpiraEn);
 END;
 GO
+
+IF OBJECT_ID('dbo.LoginIntentos', 'U') IS NULL
+BEGIN
+  CREATE TABLE dbo.LoginIntentos (
+    Id INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_LoginIntentos PRIMARY KEY,
+    Usuario NVARCHAR(100) NOT NULL,
+    DireccionIp NVARCHAR(45) NOT NULL,
+    IntentosFallidos INT NOT NULL CONSTRAINT DF_LoginIntentos_IntentosFallidos DEFAULT (0),
+    PrimeraFallaEn DATETIME2(0) NULL,
+    UltimaFallaEn DATETIME2(0) NULL,
+    BloqueadoHasta DATETIME2(0) NULL,
+    CreadoEn DATETIME2(0) NOT NULL CONSTRAINT DF_LoginIntentos_CreadoEn DEFAULT SYSUTCDATETIME(),
+    ActualizadoEn DATETIME2(0) NOT NULL CONSTRAINT DF_LoginIntentos_ActualizadoEn DEFAULT SYSUTCDATETIME()
+  );
+
+  CREATE UNIQUE INDEX UX_LoginIntentos_Usuario_DireccionIp
+    ON dbo.LoginIntentos(Usuario, DireccionIp);
+  CREATE INDEX IX_LoginIntentos_BloqueadoHasta
+    ON dbo.LoginIntentos(BloqueadoHasta)
+    INCLUDE (Usuario, DireccionIp, IntentosFallidos, PrimeraFallaEn, UltimaFallaEn);
+END;
+GO

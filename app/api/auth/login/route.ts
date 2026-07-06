@@ -2,8 +2,11 @@ import { NextResponse } from "next/server";
 import { performance } from "node:perf_hooks";
 import {
   authenticateUser,
+  clearLoginAttempts,
   createSession,
+  getLoginAttemptBlock,
   recordAccessLog,
+  recordFailedLoginAttempt,
   AUTH_COOKIE_NAME,
 } from "@/lib/auth-sql";
 
@@ -26,7 +29,7 @@ export async function POST(request: Request) {
     };
 
     const usuario = body.usuario?.trim();
-    const password = body.password?.trim();
+    const password = body.password;
 
     if (!usuario || !password) {
       return NextResponse.json(
@@ -35,29 +38,50 @@ export async function POST(request: Request) {
       );
     }
 
-    const authStart = performance.now();
-    const user = await authenticateUser(usuario, password);
-    mark("auth", authStart);
-
-    if (!user) {
-      const response = NextResponse.json(
-        { error: "Credenciales inválidas o usuario inactivo." },
-        { status: 401 },
-      );
-
-      response.headers.set("Server-Timing", timings.join(", "));
-      return response;
-    }
-
     const forwardedFor = request.headers.get("x-forwarded-for");
     const realIp = request.headers.get("x-real-ip");
     const ipAddress =
       forwardedFor?.split(",")[0]?.trim() || realIp || request.headers.get("cf-connecting-ip");
 
+    const blocked = await getLoginAttemptBlock(usuario, ipAddress);
+    if (blocked) {
+      const response = NextResponse.json(
+        { error: "Demasiados intentos fallidos. Intenta nuevamente más tarde." },
+        { status: 429 },
+      );
+
+      response.headers.set("Retry-After", String(blocked.retryAfterSeconds));
+      response.headers.set("Server-Timing", timings.join(", "));
+      return response;
+    }
+
+    const authStart = performance.now();
+    const user = await authenticateUser(usuario, password);
+    mark("auth", authStart);
+
+    if (!user) {
+      const failedAttempt = await recordFailedLoginAttempt(usuario, ipAddress);
+      const response = NextResponse.json(
+        { error: "Credenciales inválidas o usuario inactivo." },
+        { status: 401 },
+      );
+
+      if (failedAttempt.blockedUntil) {
+        response.headers.set(
+          "Retry-After",
+          String(failedAttempt.retryAfterSeconds),
+        );
+      }
+
+      response.headers.set("Server-Timing", timings.join(", "));
+      return response;
+    }
+
     const sessionStart = performance.now();
     const session = await createSession(user);
     mark("session", sessionStart);
 
+    await clearLoginAttempts(usuario, ipAddress);
     void recordAccessLog(user, ipAddress).catch(() => undefined);
 
     const response = NextResponse.json({
@@ -68,7 +92,7 @@ export async function POST(request: Request) {
 
     response.cookies.set(AUTH_COOKIE_NAME, session.token, {
       httpOnly: true,
-      sameSite: "lax",
+      sameSite: "strict",
       secure: process.env.NODE_ENV === "production",
       path: "/",
     });

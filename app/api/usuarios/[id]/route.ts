@@ -68,7 +68,7 @@ export async function PATCH(
       correo,
       rol,
       activo: body.activo ?? true,
-      password: body.password?.trim() || undefined,
+      password: body.password?.length ? body.password : undefined,
     });
 
     return NextResponse.json({ ok: true });

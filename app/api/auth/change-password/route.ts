@@ -2,13 +2,12 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import {
   AUTH_COOKIE_NAME,
+  createSession,
   getSessionUserByToken,
+  revokeSessionsForUser,
   verifyPassword,
 } from "@/lib/auth-sql";
-import {
-  findUsuarioForLoginByUsuario,
-  updateUsuarioPassword,
-} from "@/lib/usuarios-sql";
+import { MIN_PASSWORD_LENGTH, findUsuarioForLoginByUsuario, updateUsuarioPassword } from "@/lib/usuarios-sql";
 
 export const dynamic = "force-dynamic";
 
@@ -38,8 +37,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const currentPassword = body.currentPassword?.trim();
-  const newPassword = body.newPassword?.trim();
+  const currentPassword = body.currentPassword;
+  const newPassword = body.newPassword;
 
   if (!currentPassword || !newPassword) {
     return NextResponse.json(
@@ -48,9 +47,18 @@ export async function POST(request: Request) {
     );
   }
 
-  if (newPassword.length < 6) {
+  if (newPassword.trim().length === 0) {
     return NextResponse.json(
-      { error: "La nueva contraseña debe tener al menos 6 caracteres." },
+      { error: "La nueva contraseña no puede estar vacía." },
+      { status: 400 },
+    );
+  }
+
+  if (newPassword.length < MIN_PASSWORD_LENGTH) {
+    return NextResponse.json(
+      {
+        error: `La nueva contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.`,
+      },
       { status: 400 },
     );
   }
@@ -82,7 +90,23 @@ export async function POST(request: Request) {
       password: newPassword,
     });
 
-    return NextResponse.json({ ok: true });
+    await revokeSessionsForUser(user.Id);
+    const freshSession = await createSession({
+      Id: user.Id,
+      Nombre: user.Nombre,
+      Usuario: user.Usuario,
+      Rol: user.Rol,
+    });
+
+    const response = NextResponse.json({ ok: true });
+    response.cookies.set(AUTH_COOKIE_NAME, freshSession.token, {
+      httpOnly: true,
+      sameSite: "strict",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+    });
+
+    return response;
   } catch (error) {
     const message =
       error instanceof Error

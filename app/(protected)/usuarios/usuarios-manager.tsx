@@ -105,7 +105,7 @@ export function UsuariosManager({
         correo: form.correo.trim(),
         rol: form.rol.trim(),
         activo: form.activo,
-        password: form.password.trim(),
+        password: form.password,
       };
 
       const response = await fetch(
@@ -255,7 +255,7 @@ export function UsuariosManager({
           </label>
 
           <label className="grid gap-2 text-sm font-medium text-slate-700">
-            Contraseña {selectedId ? "(dejar en blanco para no cambiar)" : ""}
+            Contraseña {selectedId ? "(dejar en blanco para no cambiar, mínimo 12 caracteres)" : "(mínimo 12 caracteres)"}
             <input
               type="password"
               value={form.password}

@@ -7,6 +7,8 @@ import {
   PLATFORM_CACHE_TAGS,
 } from "@/lib/platform-cache";
 
+export const MIN_PASSWORD_LENGTH = 12;
+
 export type UsuarioRow = {
   Id: number;
   Nombre: string;
@@ -111,6 +113,18 @@ function escapeSqlString(value: string) {
 
 function toSqlHex(buffer: Buffer) {
   return `0x${buffer.toString("hex")}`;
+}
+
+function validatePasswordStrength(password: string) {
+  if (password.trim().length === 0) {
+    throw new Error("La contraseña no puede estar vacía.");
+  }
+
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    throw new Error(
+      `La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.`,
+    );
+  }
 }
 
 const listUsuariosCached = unstable_cache(
@@ -245,6 +259,8 @@ export async function getUsuarioById(id: number): Promise<UsuarioRow | null> {
 }
 
 export async function hashPassword(password: string) {
+  validatePasswordStrength(password);
+
   const salt = randomBytes(32);
   const hash = await new Promise<Buffer>((resolve, reject) => {
     pbkdf2(password, salt, 310000, 64, "sha512", (error, derivedKey) => {
@@ -270,6 +286,7 @@ export async function createUsuario(input: {
 }) {
   const run = async () => {
     const pool = await getPool();
+    validatePasswordStrength(input.password);
     const { salt, hash } = await hashPassword(input.password);
     const nombre = escapeSqlString(input.nombre);
     const usuario = escapeSqlString(input.usuario);
@@ -327,7 +344,8 @@ export async function updateUsuario(input: {
       WHERE Id = ${input.id}
     `;
 
-    if (input.password?.trim().length) {
+    if (input.password !== undefined) {
+      validatePasswordStrength(input.password);
       const { salt, hash } = await hashPassword(input.password);
       query = `
         UPDATE dbo.Usuarios
@@ -367,6 +385,7 @@ export async function updateUsuarioPassword(input: {
 }) {
   const run = async () => {
     const pool = await getPool();
+    validatePasswordStrength(input.password);
     const { salt, hash } = await hashPassword(input.password);
 
     await pool.request().query(`
