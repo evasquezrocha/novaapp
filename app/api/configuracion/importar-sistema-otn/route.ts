@@ -86,7 +86,10 @@ export async function POST(request: Request) {
   }
 
   const permissions = await listPermissions();
-  const canImport = canAccess(permissions, session.Rol, "Administración") || canAccess(permissions, session.Rol, "Permisos");
+  const canImport =
+    session.Rol !== "Supervisor" &&
+    (canAccess(permissions, session.Rol, "Administración") ||
+      canAccess(permissions, session.Rol, "Permisos"));
 
   if (!canImport) {
     return NextResponse.json({ error: "No autorizado." }, { status: 403 });

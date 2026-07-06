@@ -38,7 +38,9 @@ export default async function ProtectedLayout({
   const canSeePermisos = canAccess(permissions, session.Rol, "Permisos");
   const canSeeAdministracion = canAccess(permissions, session.Rol, "Administración");
   const canSeeAsistencia = canAccess(permissions, session.Rol, "Asistencia");
-  const canSeeSistemaOtnImport = canSeeAdministracion || canSeePermisos;
+  const isSupervisor = session.Rol === "Supervisor";
+  const canSeeSistemaOtnImport =
+    !isSupervisor && (canSeeAdministracion || canSeePermisos);
   const canSeeDisponibleOtn = canAccess(permissions, session.Rol, "Disponible OTN");
   const canSeeDisponibleCc = canAccess(permissions, session.Rol, "Disponible CC");
   const canSeeFichaOtn = canAccess(permissions, session.Rol, "Ficha OTN");
@@ -48,14 +50,14 @@ export default async function ProtectedLayout({
   const canSeePerfilesTp = canAccess(permissions, session.Rol, "Perfiles TP");
   const canSeeRoles = canAccess(permissions, session.Rol, "Roles");
   const canSeeCtSupervisores = canAccess(permissions, session.Rol, "CT Supervisores");
-  const canSeeUsersConfig = canSeeUsuarios;
   const canSeeConfigSection =
-    canSeeUsuarios ||
+    !isSupervisor &&
+    (canSeeUsuarios ||
     canSeeLog ||
     canSeeMonitoreo ||
     canSeeSistemaOtnImport ||
     canSeePermisos ||
-    canSeeRoles;
+    canSeeRoles);
   const canSeeProduccionSection = canSeeProduccion || canSeeDisponibleOtn || canSeeDisponibleCc;
   const canSeeSistemaOtnSection = canSeeSistemaOtn || canSeeFichaOtn;
   const canSeeBodegaSection = canSeeBodega || canSeeStockActual || canSeeBusquedaEnOc;

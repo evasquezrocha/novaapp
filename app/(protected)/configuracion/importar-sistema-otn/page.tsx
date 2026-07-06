@@ -17,9 +17,11 @@ export default async function ImportSistemaOtnPage() {
   }
 
   const permissions = await listPermissions();
+  const isSupervisor = session.Rol === "Supervisor";
   const canSeeImport =
-    canAccess(permissions, session.Rol, "Administración") ||
-    canAccess(permissions, session.Rol, "Permisos");
+    !isSupervisor &&
+    (canAccess(permissions, session.Rol, "Administración") ||
+      canAccess(permissions, session.Rol, "Permisos"));
 
   if (!canSeeImport) {
     redirect("/forbidden");

@@ -20,8 +20,9 @@ export async function GET() {
 
   const permissions = await listPermissions();
   const canDownload =
-    canAccess(permissions, session.Rol, "Administración") ||
-    canAccess(permissions, session.Rol, "Permisos");
+    session.Rol !== "Supervisor" &&
+    (canAccess(permissions, session.Rol, "Administración") ||
+      canAccess(permissions, session.Rol, "Permisos"));
 
   if (!canDownload) {
     return NextResponse.json({ error: "No autorizado." }, { status: 403 });

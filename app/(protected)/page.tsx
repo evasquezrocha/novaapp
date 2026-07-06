@@ -15,6 +15,7 @@ export default async function Home() {
   if (!session) {
     redirect("/login");
   }
+  const isSupervisor = session.Rol === "Supervisor";
   const allowedModules = [
     { href: "/produccion", label: "Producción", module: "Producción" },
     { href: "/produccion/sistema-otn", label: "Sistema OTN", module: "Sistema OTN" },
@@ -28,7 +29,11 @@ export default async function Home() {
       module: "Administración",
     },
     { href: "/configuracion/permisos", label: "Permisos", module: "Permisos" },
-  ].filter((item) => canAccess(permissions, session.Rol, item.module));
+  ].filter(
+    (item) =>
+      (!isSupervisor || !item.href.startsWith("/configuracion")) &&
+      canAccess(permissions, session.Rol, item.module),
+  );
 
   return (
     <section className="grid gap-6">
