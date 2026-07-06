@@ -20,6 +20,7 @@ export default async function Home() {
     { href: "/produccion", label: "Producción", module: "Producción" },
     { href: "/produccion/sistema-otn", label: "Sistema OTN", module: "Sistema OTN" },
     { href: "/bodega/stock-actual", label: "Bodega", module: "Bodega" },
+    { href: "/bodega/busqueda-en-oc", label: "Busqueda en OC", module: "Busqueda en OC" },
     { href: "/usuarios", label: "Usuarios", module: "Usuarios" },
     { href: "/configuracion/log", label: "Log", module: "Log" },
     { href: "/configuracion/monitoreo", label: "Monitoreo", module: "Monitoreo" },

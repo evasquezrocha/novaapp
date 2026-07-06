@@ -16,7 +16,7 @@ export default async function BusquedaEnOcPage() {
   }
 
   const permissions = await listPermissions();
-  if (!canAccess(permissions, session.Rol, "Bodega")) {
+  if (!canAccess(permissions, session.Rol, "Busqueda en OC")) {
     redirect("/forbidden");
   }
 
