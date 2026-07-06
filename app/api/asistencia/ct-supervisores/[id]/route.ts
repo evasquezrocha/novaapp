@@ -7,7 +7,9 @@ import {
   canDeleteCtSupervisoresRow,
   canEditCtSupervisoresRow,
   canSeeCtSupervisoresRow,
+  getNextCtSupervisoresCorrelativo,
   getCtSupervisoresRowById,
+  listCtSupervisoresRows,
 } from "@/lib/ct-supervisores-sql";
 import {
   deleteCtSupervisoresByCorrelativoWithAudit,
@@ -170,8 +172,17 @@ export async function PATCH(
     });
 
     await replaceCtSupervisoresRowsWithAudit(normalizedRows, session);
+    const [rowsAfterSave, nextCorrelativo] = await Promise.all([
+      listCtSupervisoresRows(session),
+      getNextCtSupervisoresCorrelativo(),
+    ]);
 
-    return NextResponse.json({ ok: true, replaced: normalizedRows.length });
+    return NextResponse.json({
+      ok: true,
+      replaced: normalizedRows.length,
+      rows: rowsAfterSave,
+      nextCorrelativo,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "No fue posible actualizar el ingreso.";
     const status =
@@ -220,8 +231,17 @@ export async function DELETE(
 
   try {
     const deleted = await deleteCtSupervisoresByCorrelativoWithAudit(existing.Correlativo, session);
+    const [rowsAfterDelete, nextCorrelativo] = await Promise.all([
+      listCtSupervisoresRows(session),
+      getNextCtSupervisoresCorrelativo(),
+    ]);
 
-    return NextResponse.json({ ok: true, deleted });
+    return NextResponse.json({
+      ok: true,
+      deleted,
+      rows: rowsAfterDelete,
+      nextCorrelativo,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "No fue posible eliminar el formulario.";
     return NextResponse.json({ error: message }, { status: 500 });

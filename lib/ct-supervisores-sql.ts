@@ -79,6 +79,18 @@ type CtSupervisoresSnapshotRow = {
 
 export type CtSupervisoresActor = Pick<SessionUser, "Nombre" | "Usuario" | "Rol">;
 
+type CtSupervisoresNormalizedInput = {
+  Correlativo: string;
+  Estado: CtSupervisoresEstado;
+  Nombre: string;
+  CreadoPorUsuario: string;
+  CreadoPorNombre: string;
+  Lugar: string;
+  EntradaSql: string;
+  SalidaSql: string;
+  Dias: 0.25 | 1;
+};
+
 export const CT_SUPERVISORES_PRIVILEGED_ROLES = ["Administrador", "RRHH", "Gerencia"] as const;
 const CT_SUPERVISORES_STATE_LOCKED_FOR_GERENCIA = new Set<string>([
   "Ingresado a Vacaciones",
@@ -196,67 +208,88 @@ export function canChangeCtSupervisoresEstado(
 
 async function getPool() {
   await ensureDatabaseSchema();
-  const pool = await getAuthPool();
-  await ensureCtSupervisoresColumns(pool);
-  return pool;
+  return getAuthPool();
 }
 
-async function ensureCtSupervisoresColumns(pool: Awaited<ReturnType<typeof getAuthPool>>) {
-  const hasCorrelativo = await pool
-    .request()
-    .query<{ Exists: number }>(`
-      SELECT CASE WHEN COL_LENGTH('dbo.CtSupervisores', 'Correlativo') IS NULL THEN 0 ELSE 1 END AS [Exists]
-    `);
-  const hasEstado = await pool
-    .request()
-    .query<{ Exists: number }>(`
-      SELECT CASE WHEN COL_LENGTH('dbo.CtSupervisores', 'Estado') IS NULL THEN 0 ELSE 1 END AS [Exists]
-    `);
+export function normalizeCtSupervisoresInput(
+  row: CtSupervisoresInput,
+  actorDefaults?: Pick<CtSupervisoresActor, "Usuario" | "Nombre">,
+): CtSupervisoresNormalizedInput {
+  const correlativo = requireText(normalizeText(row.Correlativo), "Correlativo");
+  const estado = requireText(normalizeEstado(row.Estado), "Estado");
+  const nombre = requireText(normalizeText(row.Nombre), "Nombre");
+  const creadoPorUsuario = normalizeText(row.CreadoPorUsuario) ?? actorDefaults?.Usuario ?? "";
+  const creadoPorNombre = normalizeText(row.CreadoPorNombre) ?? actorDefaults?.Nombre ?? nombre;
+  const lugar = requireText(normalizeText(row.Lugar), "Lugar");
+  const entrada = requireText(normalizeDateTime(row.Entrada), "Entrada");
+  const salida = requireText(normalizeDateTime(row.Salida), "Salida");
+  const dias = requireDias(normalizeDias(row.Dias));
+  const entradaSql = formatDateTimeForSql(entrada);
+  const salidaSql = formatDateTimeForSql(salida);
 
-  if (!hasCorrelativo.recordset[0]?.Exists) {
-    await pool.request().batch(`
-      ALTER TABLE dbo.CtSupervisores
-        ADD Correlativo NVARCHAR(50) NOT NULL CONSTRAINT DF_CtSupervisores_Correlativo DEFAULT ('');
-    `);
+  if (!entradaSql) {
+    throw new Error("Entrada tiene un formato invalido.");
   }
 
-  if (!hasEstado.recordset[0]?.Exists) {
-    await pool.request().batch(`
-      ALTER TABLE dbo.CtSupervisores
-        ADD Estado NVARCHAR(50) NOT NULL CONSTRAINT DF_CtSupervisores_Estado DEFAULT (N'Ingresado');
-    `);
+  if (!salidaSql) {
+    throw new Error("Salida tiene un formato invalido.");
   }
 
-  if (
-    !(await pool.request().query<{ Exists: number }>(`
-      SELECT CASE WHEN COL_LENGTH('dbo.CtSupervisores', 'CreadoPorUsuario') IS NULL THEN 0 ELSE 1 END AS [Exists]
-    `)).recordset[0]?.Exists
-  ) {
-    await pool.request().batch(`
-      ALTER TABLE dbo.CtSupervisores
-        ADD CreadoPorUsuario NVARCHAR(100) NOT NULL CONSTRAINT DF_CtSupervisores_CreadoPorUsuario DEFAULT ('');
-    `);
+  return {
+    Correlativo: correlativo,
+    Estado: estado as CtSupervisoresEstado,
+    Nombre: nombre,
+    CreadoPorUsuario: creadoPorUsuario,
+    CreadoPorNombre: creadoPorNombre,
+    Lugar: lugar,
+    EntradaSql: entradaSql,
+    SalidaSql: salidaSql,
+    Dias: dias,
+  };
+}
+
+export async function insertCtSupervisoresRows(
+  executor: sql.ConnectionPool | sql.Transaction,
+  input: CtSupervisoresInput[],
+  actorDefaults?: Pick<CtSupervisoresActor, "Usuario" | "Nombre">,
+) {
+  if (input.length === 0) {
+    return;
   }
 
-  if (
-    !(await pool.request().query<{ Exists: number }>(`
-      SELECT CASE WHEN COL_LENGTH('dbo.CtSupervisores', 'CreadoPorNombre') IS NULL THEN 0 ELSE 1 END AS [Exists]
-    `)).recordset[0]?.Exists
-  ) {
-    await pool.request().batch(`
-      ALTER TABLE dbo.CtSupervisores
-        ADD CreadoPorNombre NVARCHAR(150) NOT NULL CONSTRAINT DF_CtSupervisores_CreadoPorNombre DEFAULT ('');
-    `);
+  const normalizedRows = input.map((row) => normalizeCtSupervisoresInput(row, actorDefaults));
+  const request = executor.request();
+  const values: string[] = [];
+
+  for (const [index, row] of normalizedRows.entries()) {
+    request.input(`correlativo${index}`, sql.NVarChar(50), row.Correlativo);
+    request.input(`estado${index}`, sql.NVarChar(50), row.Estado);
+    request.input(`nombre${index}`, sql.NVarChar(150), row.Nombre);
+    request.input(`creadoPorUsuario${index}`, sql.NVarChar(100), row.CreadoPorUsuario);
+    request.input(`creadoPorNombre${index}`, sql.NVarChar(150), row.CreadoPorNombre);
+    request.input(`lugar${index}`, sql.NVarChar(150), row.Lugar);
+    request.input(`entrada${index}`, sql.DateTime2(0), row.EntradaSql);
+    request.input(`salida${index}`, sql.DateTime2(0), row.SalidaSql);
+    request.input(`dias${index}`, sql.Decimal(4, 2), row.Dias);
+
+    values.push(`(
+      @correlativo${index},
+      @estado${index},
+      @nombre${index},
+      @creadoPorUsuario${index},
+      @creadoPorNombre${index},
+      @lugar${index},
+      @entrada${index},
+      @salida${index},
+      @dias${index}
+    )`);
   }
 
-  await pool.request().batch(`
-    UPDATE dbo.CtSupervisores
-    SET Estado = N'Ingresado'
-    WHERE Estado = N'Aprobado Supervisor';
-
-    UPDATE dbo.CtSupervisores
-    SET CreadoPorNombre = Nombre
-    WHERE CreadoPorNombre = N'';
+  await request.query(`
+    INSERT INTO dbo.CtSupervisores
+      (Correlativo, Estado, Nombre, CreadoPorUsuario, CreadoPorNombre, Lugar, Entrada, Salida, Dias)
+    VALUES
+      ${values.join(",\n")}
   `);
 }
 

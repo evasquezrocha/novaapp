@@ -18,5 +18,9 @@ BEGIN
   CREATE INDEX IX_CtSupervisores_CreadoEn_Id
     ON dbo.CtSupervisores(CreadoEn DESC, Id DESC)
     INCLUDE (Correlativo, Estado, Nombre, CreadoPorUsuario, CreadoPorNombre, Lugar, Entrada, Salida, Dias);
+
+  CREATE INDEX IX_CtSupervisores_Correlativo_Id
+    ON dbo.CtSupervisores(Correlativo ASC, Id ASC)
+    INCLUDE (Estado, Nombre, CreadoPorUsuario, CreadoPorNombre, Lugar, Entrada, Salida, Dias, CreadoEn, ActualizadoEn);
 END;
 GO

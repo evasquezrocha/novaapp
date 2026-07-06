@@ -336,6 +336,19 @@ export function CtSupervisoresManager({
     setError(null);
   }
 
+  function applyCollectionPayload(payload: ApiResponse) {
+    if (payload.rows !== undefined) {
+      setEntries(payload.rows);
+    }
+
+    if (payload.nextCorrelativo !== undefined) {
+      setNextCorrelativo(payload.nextCorrelativo);
+      return payload.nextCorrelativo;
+    }
+
+    return null;
+  }
+
   async function refreshEntries() {
     const response = await fetch("/api/asistencia/ct-supervisores", {
       cache: "no-store",
@@ -382,7 +395,7 @@ export function CtSupervisoresManager({
         throw new Error(payload.error ?? "No fue posible eliminar el formulario.");
       }
 
-      const next = await refreshEntries();
+      const next = applyCollectionPayload(payload) ?? (await refreshEntries());
       setSelectedId(null);
       setActiveTab("registros");
       setForm(createEmptyForm(sessionName, next ?? nextCorrelativo));
@@ -470,7 +483,7 @@ export function CtSupervisoresManager({
         );
       }
 
-      const next = await refreshEntries();
+      const next = applyCollectionPayload(data) ?? (await refreshEntries());
       setSelectedId(null);
       setActiveTab("registros");
       setForm(createEmptyForm(sessionName, next ?? nextCorrelativo));

@@ -28,8 +28,10 @@ export async function GET() {
   }
 
   try {
-    const rows = await listCtSupervisoresRows(session);
-    const nextCorrelativo = await getNextCtSupervisoresCorrelativo();
+    const [rows, nextCorrelativo] = await Promise.all([
+      listCtSupervisoresRows(session),
+      getNextCtSupervisoresCorrelativo(),
+    ]);
     return NextResponse.json({ rows, nextCorrelativo });
   } catch (error) {
     const message = error instanceof Error ? error.message : "No fue posible listar los ingresos.";
@@ -120,10 +122,13 @@ export async function POST(request: Request) {
 
     await createCtSupervisoresRowsWithAudit(normalizedRows, session);
 
-    const nextCorrelativo = await getNextCtSupervisoresCorrelativo();
+    const [rowsAfterSave, nextCorrelativo] = await Promise.all([
+      listCtSupervisoresRows(session),
+      getNextCtSupervisoresCorrelativo(),
+    ]);
 
     return NextResponse.json(
-      { ok: true, created: normalizedRows.length, nextCorrelativo },
+      { ok: true, created: normalizedRows.length, rows: rowsAfterSave, nextCorrelativo },
       { status: 201 },
     );
   } catch (error) {

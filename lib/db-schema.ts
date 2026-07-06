@@ -225,6 +225,21 @@ BEGIN
 END;
 `;
 
+const ENSURE_CT_SUPERVISORES_INDEXES_SQL = `
+IF OBJECT_ID('dbo.CtSupervisores', 'U') IS NOT NULL
+AND NOT EXISTS (
+  SELECT 1
+  FROM sys.indexes
+  WHERE object_id = OBJECT_ID('dbo.CtSupervisores')
+    AND name = 'IX_CtSupervisores_Correlativo_Id'
+)
+BEGIN
+  CREATE INDEX IX_CtSupervisores_Correlativo_Id
+    ON dbo.CtSupervisores(Correlativo ASC, Id ASC)
+    INCLUDE (Estado, Nombre, CreadoPorUsuario, CreadoPorNombre, Lugar, Entrada, Salida, Dias, CreadoEn, ActualizadoEn);
+END;
+`;
+
 const ENSURE_PERFILES_TP_COLUMNS_SQL = `
 IF OBJECT_ID('dbo.PerfilesTP', 'U') IS NOT NULL
 AND COL_LENGTH('dbo.PerfilesTP', 'Empresa') IS NULL
@@ -703,6 +718,10 @@ async function ensureCtSupervisoresSchema(pool: sql.ConnectionPool) {
   }
 
   for (const batch of splitSqlBatches(ENSURE_CT_SUPERVISORES_COLUMNS_SQL)) {
+    await pool.request().batch(batch);
+  }
+
+  for (const batch of splitSqlBatches(ENSURE_CT_SUPERVISORES_INDEXES_SQL)) {
     await pool.request().batch(batch);
   }
 }

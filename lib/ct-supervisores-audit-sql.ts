@@ -1,8 +1,9 @@
 import sql from "mssql";
+import { revalidateTag } from "next/cache";
 import { ensureDatabaseSchema } from "@/lib/db-schema";
 import { getAuthPool } from "@/lib/auth-sql";
 import {
-  CT_SUPERVISORES_ESTADOS,
+  insertCtSupervisoresRows,
   listCtSupervisoresRowsByCorrelativo,
   type CtSupervisoresActor,
   type CtSupervisoresAuditRow,
@@ -10,6 +11,7 @@ import {
   type CtSupervisoresInput,
   type CtSupervisoresRow,
 } from "@/lib/ct-supervisores-sql";
+import { PLATFORM_CACHE_TAGS } from "@/lib/platform-cache";
 
 type SnapshotRow = {
   Estado: CtSupervisoresEstado;
@@ -38,16 +40,6 @@ export type CtSupervisoresHistoryRow = CtSupervisoresAuditRow;
 function normalizeText(value: string | null | undefined) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
-}
-
-function formatDateTimeForSql(value: string) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value);
-  if (!match) {
-    return null;
-  }
-
-  const [, year, month, day, hour, minute, second = "00"] = match;
-  return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
 }
 
 function escapeSqlString(value: string) {
@@ -179,30 +171,6 @@ function requireText(value: string | null, fieldName: string) {
   return value;
 }
 
-function requireDias(value: 0.25 | 1 | null) {
-  if (value === null) {
-    throw new Error("Dias es obligatorio.");
-  }
-
-  return value;
-}
-
-function normalizeDateTime(value: string | null | undefined) {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : null;
-}
-
-function normalizeDias(value: unknown): 0.25 | 1 | null {
-  return value === 0.25 || value === 1 ? value : null;
-}
-
-function normalizeEstado(value: string | null | undefined): CtSupervisoresEstado | null {
-  const trimmed = value?.trim();
-  return trimmed && CT_SUPERVISORES_ESTADOS.includes(trimmed as CtSupervisoresEstado)
-    ? (trimmed as CtSupervisoresEstado)
-    : null;
-}
-
 export async function listCtSupervisoresHistoryRows(
   correlativo: string,
 ): Promise<CtSupervisoresHistoryRow[]> {
@@ -242,44 +210,7 @@ export async function createCtSupervisoresRowsWithAudit(
   await transaction.begin();
 
   try {
-    for (const row of input) {
-      const rowCorrelativo = requireText(normalizeText(row.Correlativo), "Correlativo");
-      const estado = requireText(normalizeEstado(row.Estado), "Estado");
-      const nombre = requireText(normalizeText(row.Nombre), "Nombre");
-      const creadoPorUsuario = normalizeText(row.CreadoPorUsuario) ?? actor.Usuario;
-      const creadoPorNombre = normalizeText(row.CreadoPorNombre) ?? actor.Nombre;
-      const lugar = requireText(normalizeText(row.Lugar), "Lugar");
-      const entrada = requireText(normalizeDateTime(row.Entrada), "Entrada");
-      const salida = requireText(normalizeDateTime(row.Salida), "Salida");
-      const dias = requireDias(normalizeDias(row.Dias));
-      const entradaSql = formatDateTimeForSql(entrada);
-      const salidaSql = formatDateTimeForSql(salida);
-
-      if (!entradaSql) {
-        throw new Error("Entrada tiene un formato inválido.");
-      }
-
-      if (!salidaSql) {
-        throw new Error("Salida tiene un formato inválido.");
-      }
-
-      await transaction.request().query(`
-        INSERT INTO dbo.CtSupervisores
-          (Correlativo, Estado, Nombre, CreadoPorUsuario, CreadoPorNombre, Lugar, Entrada, Salida, Dias)
-        VALUES
-          (
-            N'${escapeSqlString(rowCorrelativo)}',
-            N'${escapeSqlString(estado)}',
-            N'${escapeSqlString(nombre)}',
-            N'${escapeSqlString(creadoPorUsuario)}',
-            N'${escapeSqlString(creadoPorNombre)}',
-            N'${escapeSqlString(lugar)}',
-            CONVERT(datetime2(0), N'${entradaSql}', 120),
-            CONVERT(datetime2(0), N'${salidaSql}', 120),
-            ${dias}
-          )
-      `);
-    }
+    await insertCtSupervisoresRows(transaction, input, actor);
 
     await writeAuditRecord(transaction, {
       correlativo,
@@ -289,6 +220,7 @@ export async function createCtSupervisoresRowsWithAudit(
     });
 
     await transaction.commit();
+    revalidateTag(PLATFORM_CACHE_TAGS.ctSupervisores, "max");
   } catch (error) {
     await transaction.rollback();
     throw error;
@@ -327,43 +259,7 @@ export async function replaceCtSupervisoresRowsWithAudit(
         WHERE Correlativo = @correlativo
       `);
 
-    for (const row of input) {
-      const estado = requireText(normalizeEstado(row.Estado), "Estado");
-      const nombre = requireText(normalizeText(row.Nombre), "Nombre");
-      const creadoPorUsuario = normalizeText(row.CreadoPorUsuario) ?? actor.Usuario;
-      const creadoPorNombre = normalizeText(row.CreadoPorNombre) ?? actor.Nombre;
-      const lugar = requireText(normalizeText(row.Lugar), "Lugar");
-      const entrada = requireText(normalizeDateTime(row.Entrada), "Entrada");
-      const salida = requireText(normalizeDateTime(row.Salida), "Salida");
-      const dias = requireDias(normalizeDias(row.Dias));
-      const entradaSql = formatDateTimeForSql(entrada);
-      const salidaSql = formatDateTimeForSql(salida);
-
-      if (!entradaSql) {
-        throw new Error("Entrada tiene un formato inválido.");
-      }
-
-      if (!salidaSql) {
-        throw new Error("Salida tiene un formato inválido.");
-      }
-
-      await transaction.request().query(`
-        INSERT INTO dbo.CtSupervisores
-          (Correlativo, Estado, Nombre, CreadoPorUsuario, CreadoPorNombre, Lugar, Entrada, Salida, Dias)
-        VALUES
-          (
-            N'${escapeSqlString(correlativo)}',
-            N'${escapeSqlString(estado)}',
-            N'${escapeSqlString(nombre)}',
-            N'${escapeSqlString(creadoPorUsuario)}',
-            N'${escapeSqlString(creadoPorNombre)}',
-            N'${escapeSqlString(lugar)}',
-            CONVERT(datetime2(0), N'${entradaSql}', 120),
-            CONVERT(datetime2(0), N'${salidaSql}', 120),
-            ${dias}
-          )
-      `);
-    }
+    await insertCtSupervisoresRows(transaction, input, actor);
 
     await writeAuditRecord(transaction, {
       correlativo,
@@ -373,6 +269,7 @@ export async function replaceCtSupervisoresRowsWithAudit(
     });
 
     await transaction.commit();
+    revalidateTag(PLATFORM_CACHE_TAGS.ctSupervisores, "max");
   } catch (error) {
     await transaction.rollback();
     throw error;
@@ -391,10 +288,13 @@ export async function deleteCtSupervisoresByCorrelativoWithAudit(
   await transaction.begin();
 
   try {
-    const result = await transaction.request().query(`
-      DELETE FROM dbo.CtSupervisores
-      WHERE Correlativo = N'${escapeSqlString(safeCorrelativo)}'
-    `);
+    const result = await transaction
+      .request()
+      .input("correlativo", sql.NVarChar(50), safeCorrelativo)
+      .query(`
+        DELETE FROM dbo.CtSupervisores
+        WHERE Correlativo = @correlativo
+      `);
 
     await writeAuditRecord(transaction, {
       correlativo: safeCorrelativo,
@@ -404,6 +304,7 @@ export async function deleteCtSupervisoresByCorrelativoWithAudit(
     });
 
     await transaction.commit();
+    revalidateTag(PLATFORM_CACHE_TAGS.ctSupervisores, "max");
     return result.rowsAffected[0] ?? 0;
   } catch (error) {
     await transaction.rollback();
