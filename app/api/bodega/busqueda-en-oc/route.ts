@@ -19,7 +19,7 @@ export async function GET(request: Request) {
   }
 
   const permissions = await listPermissions();
-  if (!canAccess(permissions, session.Rol, "Busqueda en OC")) {
+  if (!canAccess(permissions, session.Rol, "Búsqueda en OC")) {
     return NextResponse.json({ error: "No autorizado." }, { status: 403 });
   }
 

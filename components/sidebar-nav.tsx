@@ -242,7 +242,7 @@ export function SidebarNav({
             {
               kind: "link",
               href: "/bodega/busqueda-en-oc",
-              label: "Busqueda en OC",
+              label: "Búsqueda en OC",
               active: isBusquedaOcActive,
               visible: navVisibility.bodega.busquedaEnOc,
             },

@@ -45,7 +45,7 @@ export default async function ProtectedLayout({
   const canSeeDisponibleCc = canAccess(permissions, session.Rol, "Disponible CC");
   const canSeeFichaOtn = canAccess(permissions, session.Rol, "Ficha OTN");
   const canSeeStockActual = canAccess(permissions, session.Rol, "Stock Actual");
-  const canSeeBusquedaEnOc = canAccess(permissions, session.Rol, "Busqueda en OC");
+  const canSeeBusquedaEnOc = canAccess(permissions, session.Rol, "Búsqueda en OC");
   const canSeeActivosFijos = canAccess(permissions, session.Rol, "Activos Fijos");
   const canSeePerfilesTp = canAccess(permissions, session.Rol, "Perfiles TP");
   const canSeeRoles = canAccess(permissions, session.Rol, "Roles");

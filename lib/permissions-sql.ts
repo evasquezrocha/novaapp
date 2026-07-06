@@ -18,6 +18,14 @@ export type PermissionRow = {
 
 type StoredPermissionRow = PermissionRow;
 
+function normalizePermissionValue(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 function defaultAllowed(role: string, moduleName: string, action: string) {
   if (role === "Administrador") {
     return true;
@@ -118,11 +126,14 @@ function mergePermissions(
 ): PermissionRow[] {
   const map = new Map<string, boolean>();
   for (const row of stored) {
-    map.set(`${row.Rol}::${row.Modulo}::${row.Accion}`, Boolean(row.Permitido));
+    map.set(
+      `${normalizePermissionValue(row.Rol)}::${normalizePermissionValue(row.Modulo)}::${normalizePermissionValue(row.Accion)}`,
+      Boolean(row.Permitido),
+    );
   }
 
   return defaults.map((row) => {
-    const key = `${row.Rol}::${row.Modulo}::${row.Accion}`;
+    const key = `${normalizePermissionValue(row.Rol)}::${normalizePermissionValue(row.Modulo)}::${normalizePermissionValue(row.Accion)}`;
     return {
       ...row,
       Permitido: map.get(key) ?? row.Permitido,
@@ -164,9 +175,9 @@ export function canAccess(
   return (
     permissions.find(
       (row) =>
-        row.Rol === role &&
-        row.Modulo === module &&
-        row.Accion === action,
+        normalizePermissionValue(row.Rol) === normalizePermissionValue(role) &&
+        normalizePermissionValue(row.Modulo) === normalizePermissionValue(module) &&
+        normalizePermissionValue(row.Accion) === normalizePermissionValue(action),
     )?.Permitido ?? false
   );
 }
