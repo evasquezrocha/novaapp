@@ -20,16 +20,15 @@ export default async function ProtectedLayout({
     redirect("/login");
   }
 
-  const session = await getSessionUserByToken(token);
+  const [session, permissions, company] = await Promise.all([
+    getSessionUserByToken(token),
+    listPermissions(),
+    getActiveSapCompany(),
+  ]);
 
   if (!session) {
     redirect("/login");
   }
-
-  const [permissions, company] = await Promise.all([
-    listPermissions(),
-    getActiveSapCompany(),
-  ]);
   const canSeeProduccion = canAccess(permissions, session.Rol, "Producción");
   const canSeeSistemaOtn = canAccess(permissions, session.Rol, "Sistema OTN");
   const canSeeBodega = canAccess(permissions, session.Rol, "Bodega");

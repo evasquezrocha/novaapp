@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AUTH_COOKIE_NAME, getSessionUserByToken } from "@/lib/auth-sql";
+import { PlatformWarmup } from "@/components/platform-warmup";
 import { LoginForm } from "./login-form";
 
 export default async function LoginPage() {
@@ -22,17 +23,16 @@ export default async function LoginPage() {
             NovaApp
           </p>
           <h1 className="mt-6 max-w-xl text-4xl font-semibold tracking-tight">
-            Acceso seguro a producción, bodega y administración.
+            Acceso seguro a produccion, bodega y administracion.
           </h1>
           <p className="mt-4 max-w-xl text-base leading-7 text-slate-300">
-            Ingresa con tu usuario y contraseña para abrir el panel de
-            operación.
+            Ingresa con tu usuario y contrasena para abrir el panel de operacion.
           </p>
         </div>
 
         <div className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm">
           <p className="text-sm font-semibold uppercase tracking-[0.3em] text-cyan-700">
-            Inicio de sesión
+            Inicio de sesion
           </p>
           <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
             Bienvenido
@@ -40,6 +40,7 @@ export default async function LoginPage() {
           <p className="mt-3 text-sm leading-6 text-slate-600">
             Usa tu usuario de la tabla <span className="font-medium">Usuarios</span>.
           </p>
+          <PlatformWarmup companyKey="login" routes={[]} apiUrls={["/api/warmup"]} />
           <LoginForm />
         </div>
       </section>
