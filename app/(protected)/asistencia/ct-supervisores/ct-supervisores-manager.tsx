@@ -43,6 +43,8 @@ type HistoryRow = {
 type ApiResponse = {
   error?: string;
   rows?: CtSupervisoresRow[];
+  affectedRows?: CtSupervisoresRow[];
+  deletedCorrelativo?: string;
   nextCorrelativo?: string;
   history?: HistoryRow[];
 };
@@ -108,6 +110,14 @@ function toInputDateTime(value: string) {
 function formatHistoryDateTime(value: string) {
   const match = value.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/);
   return match ? `${match[1]} ${match[2]}` : value.slice(0, 16).replace("T", " ");
+}
+
+function compareCtSupervisoresRows(left: CtSupervisoresRow, right: CtSupervisoresRow) {
+  if (left.CreadoEn !== right.CreadoEn) {
+    return left.CreadoEn < right.CreadoEn ? 1 : -1;
+  }
+
+  return right.Id - left.Id;
 }
 
 async function readJsonOrText(response: Response) {
@@ -336,17 +346,14 @@ export function CtSupervisoresManager({
     setError(null);
   }
 
-  function applyCollectionPayload(payload: ApiResponse) {
-    if (payload.rows !== undefined) {
-      setEntries(payload.rows);
-    }
+  function applyAffectedRows(correlativo: string, rows: CtSupervisoresRow[]) {
+    setEntries((current) =>
+      [...current.filter((entry) => entry.Correlativo !== correlativo), ...rows].sort(compareCtSupervisoresRows),
+    );
+  }
 
-    if (payload.nextCorrelativo !== undefined) {
-      setNextCorrelativo(payload.nextCorrelativo);
-      return payload.nextCorrelativo;
-    }
-
-    return null;
+  function removeEntriesByCorrelativo(correlativo: string) {
+    setEntries((current) => current.filter((entry) => entry.Correlativo !== correlativo));
   }
 
   async function refreshEntries() {
@@ -395,10 +402,20 @@ export function CtSupervisoresManager({
         throw new Error(payload.error ?? "No fue posible eliminar el formulario.");
       }
 
-      const next = applyCollectionPayload(payload) ?? (await refreshEntries());
+      if (payload.deletedCorrelativo) {
+        removeEntriesByCorrelativo(payload.deletedCorrelativo);
+      } else {
+        await refreshEntries();
+      }
+
+      const next = payload.nextCorrelativo ?? nextCorrelativo;
+      if (payload.nextCorrelativo) {
+        setNextCorrelativo(payload.nextCorrelativo);
+      }
+
       setSelectedId(null);
       setActiveTab("registros");
-      setForm(createEmptyForm(sessionName, next ?? nextCorrelativo));
+      setForm(createEmptyForm(sessionName, next));
       setHistoryRows([]);
       setHistoryError(null);
     } catch (deleteError) {
@@ -483,10 +500,22 @@ export function CtSupervisoresManager({
         );
       }
 
-      const next = applyCollectionPayload(data) ?? (await refreshEntries());
+      const affectedCorrelativo = data.affectedRows?.[0]?.Correlativo ?? form.correlativo.trim();
+
+      if (data.affectedRows && affectedCorrelativo) {
+        applyAffectedRows(affectedCorrelativo, data.affectedRows);
+      } else {
+        await refreshEntries();
+      }
+
+      const next = data.nextCorrelativo ?? nextCorrelativo;
+      if (data.nextCorrelativo) {
+        setNextCorrelativo(data.nextCorrelativo);
+      }
+
       setSelectedId(null);
       setActiveTab("registros");
-      setForm(createEmptyForm(sessionName, next ?? nextCorrelativo));
+      setForm(createEmptyForm(sessionName, next));
       setHistoryRows([]);
       setHistoryError(null);
     } catch (submissionError) {

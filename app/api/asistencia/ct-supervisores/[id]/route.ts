@@ -9,7 +9,7 @@ import {
   canSeeCtSupervisoresRow,
   getNextCtSupervisoresCorrelativo,
   getCtSupervisoresRowById,
-  listCtSupervisoresRows,
+  listCtSupervisoresRowsByCorrelativo,
 } from "@/lib/ct-supervisores-sql";
 import {
   deleteCtSupervisoresByCorrelativoWithAudit,
@@ -172,15 +172,15 @@ export async function PATCH(
     });
 
     await replaceCtSupervisoresRowsWithAudit(normalizedRows, session);
-    const [rowsAfterSave, nextCorrelativo] = await Promise.all([
-      listCtSupervisoresRows(session),
+    const [affectedRows, nextCorrelativo] = await Promise.all([
+      listCtSupervisoresRowsByCorrelativo(existing.Correlativo),
       getNextCtSupervisoresCorrelativo(),
     ]);
 
     return NextResponse.json({
       ok: true,
       replaced: normalizedRows.length,
-      rows: rowsAfterSave,
+      affectedRows,
       nextCorrelativo,
     });
   } catch (error) {
@@ -231,15 +231,12 @@ export async function DELETE(
 
   try {
     const deleted = await deleteCtSupervisoresByCorrelativoWithAudit(existing.Correlativo, session);
-    const [rowsAfterDelete, nextCorrelativo] = await Promise.all([
-      listCtSupervisoresRows(session),
-      getNextCtSupervisoresCorrelativo(),
-    ]);
+    const nextCorrelativo = await getNextCtSupervisoresCorrelativo();
 
     return NextResponse.json({
       ok: true,
       deleted,
-      rows: rowsAfterDelete,
+      deletedCorrelativo: existing.Correlativo,
       nextCorrelativo,
     });
   } catch (error) {

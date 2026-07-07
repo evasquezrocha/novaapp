@@ -6,6 +6,7 @@ import {
   CT_SUPERVISORES_ESTADOS,
   getNextCtSupervisoresCorrelativo,
   listCtSupervisoresRows,
+  listCtSupervisoresRowsByCorrelativo,
 } from "@/lib/ct-supervisores-sql";
 import { createCtSupervisoresRowsWithAudit } from "@/lib/ct-supervisores-audit-sql";
 
@@ -122,13 +123,13 @@ export async function POST(request: Request) {
 
     await createCtSupervisoresRowsWithAudit(normalizedRows, session);
 
-    const [rowsAfterSave, nextCorrelativo] = await Promise.all([
-      listCtSupervisoresRows(session),
+    const [affectedRows, nextCorrelativo] = await Promise.all([
+      listCtSupervisoresRowsByCorrelativo(correlativo),
       getNextCtSupervisoresCorrelativo(),
     ]);
 
     return NextResponse.json(
-      { ok: true, created: normalizedRows.length, rows: rowsAfterSave, nextCorrelativo },
+      { ok: true, created: normalizedRows.length, affectedRows, nextCorrelativo },
       { status: 201 },
     );
   } catch (error) {
