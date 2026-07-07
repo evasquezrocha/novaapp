@@ -113,6 +113,7 @@ export async function PATCH(
       estado?: string;
       rows?: Array<{
         lugar?: string;
+        otn?: string;
         entrada?: string;
         salida?: string;
         dias?: 0.25 | 1 | string | number;
@@ -138,6 +139,7 @@ export async function PATCH(
 
     const normalizedRows = rows.map((row, index) => {
       const lugar = row.lugar?.trim();
+      const otn = row.otn?.trim();
       const entrada = row.entrada?.trim();
       const salida = row.salida?.trim();
       const dias = Number(row.dias);
@@ -148,6 +150,10 @@ export async function PATCH(
 
       if (!entrada) {
         throw new Error(`La fila ${index + 1} requiere Entrada.`);
+      }
+
+      if (!otn) {
+        throw new Error(`La fila ${index + 1} requiere OTN.`);
       }
 
       if (!salida) {
@@ -165,6 +171,7 @@ export async function PATCH(
         CreadoPorUsuario: existing.CreadoPorUsuario,
         CreadoPorNombre: existing.CreadoPorNombre,
         Lugar: lugar,
+        OTN: otn,
         Entrada: entrada,
         Salida: salida,
         Dias: dias as 0.25 | 1,

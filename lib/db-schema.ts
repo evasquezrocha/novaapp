@@ -218,6 +218,13 @@ BEGIN
 END;
 
 IF OBJECT_ID('dbo.CtSupervisores', 'U') IS NOT NULL
+AND COL_LENGTH('dbo.CtSupervisores', 'OTN') IS NULL
+BEGIN
+  ALTER TABLE dbo.CtSupervisores
+    ADD OTN NVARCHAR(50) NOT NULL CONSTRAINT DF_CtSupervisores_OTN DEFAULT ('');
+END;
+
+IF OBJECT_ID('dbo.CtSupervisores', 'U') IS NOT NULL
 BEGIN
   UPDATE dbo.CtSupervisores
     SET CreadoPorNombre = Nombre
@@ -236,7 +243,7 @@ AND NOT EXISTS (
 BEGIN
   CREATE INDEX IX_CtSupervisores_Correlativo_Id
     ON dbo.CtSupervisores(Correlativo ASC, Id ASC)
-    INCLUDE (Estado, Nombre, CreadoPorUsuario, CreadoPorNombre, Lugar, Entrada, Salida, Dias, CreadoEn, ActualizadoEn);
+    INCLUDE (Estado, Nombre, CreadoPorUsuario, CreadoPorNombre, Lugar, OTN, Entrada, Salida, Dias, CreadoEn, ActualizadoEn);
 END;
 `;
 

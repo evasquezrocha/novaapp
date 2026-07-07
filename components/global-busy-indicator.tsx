@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
 
 const SKIP_PATHS = [
   "/_next/static",
@@ -68,57 +67,10 @@ function shouldTrackRequest(input: RequestInfo | URL, init?: RequestInit) {
   return true;
 }
 
-function isModifiedClick(event: MouseEvent) {
-  return event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0;
-}
-
-function findAnchor(target: EventTarget | null) {
-  if (!(target instanceof Element)) {
-    return null;
-  }
-
-  const anchor = target.closest("a[href]");
-  return anchor instanceof HTMLAnchorElement ? anchor : null;
-}
-
-function shouldTrackAnchor(anchor: HTMLAnchorElement) {
-  if (anchor.hasAttribute("download")) {
-    return false;
-  }
-
-  const target = anchor.getAttribute("target");
-  if (target && target !== "_self") {
-    return false;
-  }
-
-  const href = anchor.getAttribute("href");
-  if (!href || href.startsWith("#")) {
-    return false;
-  }
-
-  try {
-    const url = new URL(anchor.href, window.location.href);
-    if (url.origin !== window.location.origin) {
-      return false;
-    }
-
-    if (url.pathname === window.location.pathname && url.search === window.location.search) {
-      return false;
-    }
-  } catch {
-    return false;
-  }
-
-  return true;
-}
-
 export function GlobalBusyIndicator() {
   const [visible, setVisible] = useState(false);
   const pendingCountRef = useRef(0);
-  const navigationCountRef = useRef(0);
   const showTimerRef = useRef<number | null>(null);
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
 
   useEffect(() => {
     const originalFetch = window.fetch.bind(window);
@@ -131,7 +83,7 @@ export function GlobalBusyIndicator() {
     }
 
     function syncVisibility() {
-      if (pendingCountRef.current > 0 || navigationCountRef.current > 0) {
+      if (pendingCountRef.current > 0) {
         if (showTimerRef.current === null) {
           showTimerRef.current = window.setTimeout(() => {
             setVisible(true);
@@ -144,46 +96,6 @@ export function GlobalBusyIndicator() {
       stopTimer();
       setVisible(false);
     }
-
-    function beginNavigationHint() {
-      navigationCountRef.current += 1;
-      syncVisibility();
-    }
-
-    function endNavigationHint() {
-      navigationCountRef.current = Math.max(0, navigationCountRef.current - 1);
-      syncVisibility();
-    }
-
-    function handleClick(event: MouseEvent) {
-      if (event.defaultPrevented || isModifiedClick(event)) {
-        return;
-      }
-
-      const anchor = findAnchor(event.target);
-      if (!anchor || !shouldTrackAnchor(anchor)) {
-        return;
-      }
-
-      beginNavigationHint();
-      window.setTimeout(() => {
-        endNavigationHint();
-      }, 10000);
-    }
-
-    function handleSubmit(event: SubmitEvent) {
-      if (event.defaultPrevented) {
-        return;
-      }
-
-      beginNavigationHint();
-      window.setTimeout(() => {
-        endNavigationHint();
-      }, 10000);
-    }
-
-    document.addEventListener("click", handleClick, true);
-    document.addEventListener("submit", handleSubmit, true);
 
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const tracked = shouldTrackRequest(input, init);
@@ -204,19 +116,10 @@ export function GlobalBusyIndicator() {
     };
 
     return () => {
-      document.removeEventListener("click", handleClick, true);
-      document.removeEventListener("submit", handleSubmit, true);
       window.fetch = originalFetch;
       stopTimer();
     };
   }, []);
-
-  useEffect(() => {
-    navigationCountRef.current = 0;
-    if (pendingCountRef.current === 0) {
-      setVisible(false);
-    }
-  }, [pathname, searchParams]);
 
   if (!visible) {
     return null;

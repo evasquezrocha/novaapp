@@ -11,6 +11,7 @@ export type CtSupervisoresInput = {
   Estado: CtSupervisoresEstado;
   Nombre: string;
   Lugar: string;
+  OTN: string;
   Entrada: string;
   Salida: string;
   Dias: 0.25 | 1;
@@ -33,6 +34,7 @@ export type CtSupervisoresRow = {
   CreadoPorUsuario: string;
   CreadoPorNombre: string;
   Lugar: string;
+  OTN: string;
   Entrada: string;
   Salida: string;
   Dias: number;
@@ -72,6 +74,7 @@ type CtSupervisoresSnapshotRow = {
   CreadoPorUsuario: string;
   CreadoPorNombre: string;
   Lugar: string;
+  OTN: string;
   Entrada: string;
   Salida: string;
   Dias: 0.25 | 1;
@@ -86,6 +89,7 @@ type CtSupervisoresNormalizedInput = {
   CreadoPorUsuario: string;
   CreadoPorNombre: string;
   Lugar: string;
+  OTN: string;
   EntradaSql: string;
   SalidaSql: string;
   Dias: 0.25 | 1;
@@ -221,6 +225,7 @@ export function normalizeCtSupervisoresInput(
   const creadoPorUsuario = normalizeText(row.CreadoPorUsuario) ?? actorDefaults?.Usuario ?? "";
   const creadoPorNombre = normalizeText(row.CreadoPorNombre) ?? actorDefaults?.Nombre ?? nombre;
   const lugar = requireText(normalizeText(row.Lugar), "Lugar");
+  const otn = requireText(normalizeText(row.OTN), "OTN");
   const entrada = requireText(normalizeDateTime(row.Entrada), "Entrada");
   const salida = requireText(normalizeDateTime(row.Salida), "Salida");
   const dias = requireDias(normalizeDias(row.Dias));
@@ -242,6 +247,7 @@ export function normalizeCtSupervisoresInput(
     CreadoPorUsuario: creadoPorUsuario,
     CreadoPorNombre: creadoPorNombre,
     Lugar: lugar,
+    OTN: otn,
     EntradaSql: entradaSql,
     SalidaSql: salidaSql,
     Dias: dias,
@@ -268,6 +274,7 @@ export async function insertCtSupervisoresRows(
     request.input(`creadoPorUsuario${index}`, sql.NVarChar(100), row.CreadoPorUsuario);
     request.input(`creadoPorNombre${index}`, sql.NVarChar(150), row.CreadoPorNombre);
     request.input(`lugar${index}`, sql.NVarChar(150), row.Lugar);
+    request.input(`otn${index}`, sql.NVarChar(50), row.OTN);
     request.input(`entrada${index}`, sql.DateTime2(0), row.EntradaSql);
     request.input(`salida${index}`, sql.DateTime2(0), row.SalidaSql);
     request.input(`dias${index}`, sql.Decimal(4, 2), row.Dias);
@@ -279,6 +286,7 @@ export async function insertCtSupervisoresRows(
       @creadoPorUsuario${index},
       @creadoPorNombre${index},
       @lugar${index},
+      @otn${index},
       @entrada${index},
       @salida${index},
       @dias${index}
@@ -287,7 +295,7 @@ export async function insertCtSupervisoresRows(
 
   await request.query(`
     INSERT INTO dbo.CtSupervisores
-      (Correlativo, Estado, Nombre, CreadoPorUsuario, CreadoPorNombre, Lugar, Entrada, Salida, Dias)
+      (Correlativo, Estado, Nombre, CreadoPorUsuario, CreadoPorNombre, Lugar, OTN, Entrada, Salida, Dias)
     VALUES
       ${values.join(",\n")}
   `);
@@ -312,6 +320,7 @@ const listCtSupervisoresRowsCached = unstable_cache(
             CreadoPorUsuario,
             CreadoPorNombre,
             Lugar,
+            OTN,
             CONVERT(varchar(19), Entrada, 120) AS Entrada,
             CONVERT(varchar(19), Salida, 120) AS Salida,
             Dias,
@@ -352,6 +361,7 @@ const getCtSupervisoresRowByIdCached = unstable_cache(
         CreadoPorUsuario,
         CreadoPorNombre,
         Lugar,
+        OTN,
         CONVERT(varchar(19), Entrada, 120) AS Entrada,
         CONVERT(varchar(19), Salida, 120) AS Salida,
         Dias,
@@ -387,6 +397,7 @@ const listCtSupervisoresRowsByCorrelativoCached = unstable_cache(
         CreadoPorUsuario,
         CreadoPorNombre,
         Lugar,
+        OTN,
         CONVERT(varchar(19), Entrada, 120) AS Entrada,
         CONVERT(varchar(19), Salida, 120) AS Salida,
         Dias,
@@ -467,6 +478,7 @@ export async function createCtSupervisoresRows(input: CtSupervisoresInput[]) {
     const creadoPorUsuario = normalizeText(row.CreadoPorUsuario) ?? "";
     const creadoPorNombre = normalizeText(row.CreadoPorNombre) ?? nombre;
     const lugar = requireText(normalizeText(row.Lugar), "Lugar");
+    const otn = requireText(normalizeText(row.OTN), "OTN");
     const entrada = requireText(normalizeDateTime(row.Entrada), "Entrada");
     const salida = requireText(normalizeDateTime(row.Salida), "Salida");
     const dias = requireDias(normalizeDias(row.Dias));
@@ -487,10 +499,11 @@ export async function createCtSupervisoresRows(input: CtSupervisoresInput[]) {
     const safeCreadoPorUsuario = escapeSqlString(creadoPorUsuario);
     const safeCreadoPorNombre = escapeSqlString(creadoPorNombre);
     const safeLugar = escapeSqlString(lugar);
+    const safeOtn = escapeSqlString(otn);
 
     await pool.request().query(`
       INSERT INTO dbo.CtSupervisores
-        (Correlativo, Estado, Nombre, CreadoPorUsuario, CreadoPorNombre, Lugar, Entrada, Salida, Dias)
+        (Correlativo, Estado, Nombre, CreadoPorUsuario, CreadoPorNombre, Lugar, OTN, Entrada, Salida, Dias)
       VALUES
         (
           N'${safeCorrelativo}',
@@ -499,6 +512,7 @@ export async function createCtSupervisoresRows(input: CtSupervisoresInput[]) {
           N'${safeCreadoPorUsuario}',
           N'${safeCreadoPorNombre}',
           N'${safeLugar}',
+          N'${safeOtn}',
           CONVERT(datetime2(0), N'${entradaSql}', 120),
           CONVERT(datetime2(0), N'${salidaSql}', 120),
           ${dias}
@@ -542,6 +556,7 @@ export async function replaceCtSupervisoresRows(input: CtSupervisoresInput[]) {
       const creadoPorUsuario = normalizeText(row.CreadoPorUsuario) ?? "";
       const creadoPorNombre = normalizeText(row.CreadoPorNombre) ?? nombre;
       const lugar = requireText(normalizeText(row.Lugar), "Lugar");
+      const otn = requireText(normalizeText(row.OTN), "OTN");
       const entrada = requireText(normalizeDateTime(row.Entrada), "Entrada");
       const salida = requireText(normalizeDateTime(row.Salida), "Salida");
       const dias = requireDias(normalizeDias(row.Dias));
@@ -562,10 +577,11 @@ export async function replaceCtSupervisoresRows(input: CtSupervisoresInput[]) {
       const safeCreadoPorUsuario = escapeSqlString(creadoPorUsuario);
       const safeCreadoPorNombre = escapeSqlString(creadoPorNombre);
       const safeLugar = escapeSqlString(lugar);
+      const safeOtn = escapeSqlString(otn);
 
       await transaction.request().query(`
         INSERT INTO dbo.CtSupervisores
-          (Correlativo, Estado, Nombre, CreadoPorUsuario, CreadoPorNombre, Lugar, Entrada, Salida, Dias)
+          (Correlativo, Estado, Nombre, CreadoPorUsuario, CreadoPorNombre, Lugar, OTN, Entrada, Salida, Dias)
         VALUES
           (
             N'${safeCorrelativo}',
@@ -574,6 +590,7 @@ export async function replaceCtSupervisoresRows(input: CtSupervisoresInput[]) {
             N'${safeCreadoPorUsuario}',
             N'${safeCreadoPorNombre}',
             N'${safeLugar}',
+            N'${safeOtn}',
             CONVERT(datetime2(0), N'${entradaSql}', 120),
             CONVERT(datetime2(0), N'${salidaSql}', 120),
             ${dias}
@@ -619,6 +636,7 @@ export async function updateCtSupervisoresRow(input: CtSupervisoresInput & { Id:
   const creadoPorUsuario = normalizeText(input.CreadoPorUsuario) ?? "";
   const creadoPorNombre = normalizeText(input.CreadoPorNombre) ?? nombre;
   const lugar = requireText(normalizeText(input.Lugar), "Lugar");
+  const otn = requireText(normalizeText(input.OTN), "OTN");
   const entrada = requireText(normalizeDateTime(input.Entrada), "Entrada");
   const salida = requireText(normalizeDateTime(input.Salida), "Salida");
   const dias = requireDias(normalizeDias(input.Dias));
@@ -639,6 +657,7 @@ export async function updateCtSupervisoresRow(input: CtSupervisoresInput & { Id:
   const safeCreadoPorUsuario = escapeSqlString(creadoPorUsuario);
   const safeCreadoPorNombre = escapeSqlString(creadoPorNombre);
   const safeLugar = escapeSqlString(lugar);
+  const safeOtn = escapeSqlString(otn);
 
   const result = await pool.request().query(`
     UPDATE dbo.CtSupervisores
@@ -649,6 +668,7 @@ export async function updateCtSupervisoresRow(input: CtSupervisoresInput & { Id:
       CreadoPorUsuario = N'${safeCreadoPorUsuario}',
       CreadoPorNombre = N'${safeCreadoPorNombre}',
       Lugar = N'${safeLugar}',
+      OTN = N'${safeOtn}',
       Entrada = CONVERT(datetime2(0), N'${entradaSql}', 120),
       Salida = CONVERT(datetime2(0), N'${salidaSql}', 120),
       Dias = ${dias},

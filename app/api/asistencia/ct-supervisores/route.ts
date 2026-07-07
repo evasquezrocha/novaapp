@@ -4,6 +4,7 @@ import { AUTH_COOKIE_NAME, getSessionUserByToken } from "@/lib/auth-sql";
 import { canAccess, listPermissions } from "@/lib/permissions-sql";
 import {
   CT_SUPERVISORES_ESTADOS,
+  CT_SUPERVISORES_PRIVILEGED_ROLES,
   getNextCtSupervisoresCorrelativo,
   listCtSupervisoresRows,
   listCtSupervisoresRowsByCorrelativo,
@@ -61,6 +62,7 @@ export async function POST(request: Request) {
       nombre?: string;
       rows?: Array<{
         lugar?: string;
+        otn?: string;
         entrada?: string;
         salida?: string;
         dias?: 0.25 | 1 | string | number;
@@ -86,8 +88,20 @@ export async function POST(request: Request) {
       throw new ValidationError("Estado es obligatorio.");
     }
 
+    const isPrivilegedRole = CT_SUPERVISORES_PRIVILEGED_ROLES.includes(
+      session.Rol as (typeof CT_SUPERVISORES_PRIVILEGED_ROLES)[number],
+    );
+
+    if (!isPrivilegedRole && estado !== "Ingresado") {
+      return NextResponse.json(
+        { error: "No puedes cambiar el estado inicial del registro." },
+        { status: 403 },
+      );
+    }
+
     const normalizedRows = rows.map((row, index) => {
       const lugar = row.lugar?.trim();
+      const otn = row.otn?.trim();
       const entrada = row.entrada?.trim();
       const salida = row.salida?.trim();
       const dias = Number(row.dias);
@@ -98,6 +112,10 @@ export async function POST(request: Request) {
 
       if (!entrada) {
         throw new ValidationError(`La fila ${index + 1} requiere Entrada.`);
+      }
+
+      if (!otn) {
+        throw new ValidationError(`La fila ${index + 1} requiere OTN.`);
       }
 
       if (!salida) {
@@ -115,6 +133,7 @@ export async function POST(request: Request) {
         CreadoPorUsuario: session.Usuario,
         CreadoPorNombre: session.Nombre,
         Lugar: lugar,
+        OTN: otn,
         Entrada: entrada,
         Salida: salida,
         Dias: dias as 0.25 | 1,

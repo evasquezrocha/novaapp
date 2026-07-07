@@ -599,17 +599,30 @@ export function DisponibleOtnClient({
   const autoLoadedOtnRef = useRef<string | null>(null);
   const syncedCompanyRef = useRef<SapCompanyKey | null>(null);
 
+  function applyQueryData(data: {
+    row: ProjectRow;
+    materiales: MaterialesUtilizados;
+    materialesDevueltos: MaterialesDevueltos;
+    serviciosSinOc: ServiciosSinOc;
+    serviciosUtilizados: ServiciosUtilizados;
+    ncServicios: NcServicios;
+    asientosDirectos: AsientosDirectos;
+    fondosRendidos: FondosRendidos;
+  }) {
+    setRow(data.row);
+    setMateriales(data.materiales);
+    setMaterialesDevueltos(data.materialesDevueltos);
+    setServiciosSinOc(data.serviciosSinOc);
+    setServiciosUtilizados(data.serviciosUtilizados);
+    setNcServicios(data.ncServicios);
+    setAsientosDirectos(data.asientosDirectos);
+    setFondosRendidos(data.fondosRendidos);
+    setActiveTab("materiales-utilizados");
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    setRow(null);
-    setMateriales(null);
-    setMaterialesDevueltos(null);
-    setServiciosSinOc(null);
-    setServiciosUtilizados(null);
-    setNcServicios(null);
-    setAsientosDirectos(null);
-    setFondosRendidos(null);
 
     if (!/^\d{4,6}$/.test(otn)) {
       setError("El OTN debe contener entre 4 y 6 digitos.");
@@ -642,15 +655,7 @@ export function DisponibleOtnClient({
         return;
       }
 
-      setRow(data.row);
-      setMateriales(data.materiales);
-      setMaterialesDevueltos(data.materialesDevueltos);
-      setServiciosSinOc(data.serviciosSinOc);
-      setServiciosUtilizados(data.serviciosUtilizados);
-      setNcServicios(data.ncServicios);
-      setAsientosDirectos(data.asientosDirectos);
-      setFondosRendidos(data.fondosRendidos);
-      setActiveTab("materiales-utilizados");
+      applyQueryData(data);
     } catch {
       setError("No fue posible consultar el OTN.");
     } finally {
@@ -668,14 +673,6 @@ export function DisponibleOtnClient({
     void (async () => {
       setLoading(true);
       setError(null);
-      setRow(null);
-      setMateriales(null);
-      setMaterialesDevueltos(null);
-      setServiciosSinOc(null);
-      setServiciosUtilizados(null);
-      setNcServicios(null);
-      setAsientosDirectos(null);
-      setFondosRendidos(null);
 
       try {
         const response = await fetch(
@@ -701,15 +698,7 @@ export function DisponibleOtnClient({
           return;
         }
 
-        setRow(data.row);
-        setMateriales(data.materiales);
-        setMaterialesDevueltos(data.materialesDevueltos);
-        setServiciosSinOc(data.serviciosSinOc);
-        setServiciosUtilizados(data.serviciosUtilizados);
-        setNcServicios(data.ncServicios);
-        setAsientosDirectos(data.asientosDirectos);
-        setFondosRendidos(data.fondosRendidos);
-        setActiveTab("materiales-utilizados");
+        applyQueryData(data);
       } catch {
         setError("No fue posible consultar el OTN.");
       } finally {
@@ -728,7 +717,6 @@ export function DisponibleOtnClient({
     void (async () => {
       try {
         await setActiveSapCompany(companyKey);
-        router.refresh();
       } catch {
         syncedCompanyRef.current = null;
       }

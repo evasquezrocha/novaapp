@@ -19,6 +19,7 @@ type SnapshotRow = {
   CreadoPorUsuario: string;
   CreadoPorNombre: string;
   Lugar: string;
+  OTN: string;
   Entrada: string;
   Salida: string;
   Dias: 0.25 | 1;
@@ -53,6 +54,7 @@ function snapshotFromInput(row: CtSupervisoresInput): SnapshotRow {
     CreadoPorUsuario: row.CreadoPorUsuario ?? "",
     CreadoPorNombre: row.CreadoPorNombre ?? row.Nombre,
     Lugar: row.Lugar,
+    OTN: row.OTN,
     Entrada: row.Entrada,
     Salida: row.Salida,
     Dias: row.Dias,
@@ -66,6 +68,7 @@ function snapshotFromDbRow(row: CtSupervisoresRow): SnapshotRow {
     CreadoPorUsuario: row.CreadoPorUsuario,
     CreadoPorNombre: row.CreadoPorNombre,
     Lugar: row.Lugar,
+    OTN: row.OTN,
     Entrada: row.Entrada,
     Salida: row.Salida,
     Dias: row.Dias as 0.25 | 1,
@@ -77,6 +80,7 @@ function describeSnapshotRow(row: SnapshotRow) {
     `Estado=${row.Estado}`,
     `Nombre=${row.Nombre}`,
     `Lugar=${row.Lugar}`,
+    `OTN=${row.OTN}`,
     `Entrada=${row.Entrada}`,
     `Salida=${row.Salida}`,
     `Dias=${row.Dias}`,
@@ -115,7 +119,7 @@ function buildAuditPayload(beforeRows: SnapshotRow[], afterRows: SnapshotRow[]):
       continue;
     }
 
-    for (const field of ["Estado", "Nombre", "Lugar", "Entrada", "Salida", "Dias"] as const) {
+    for (const field of ["Estado", "Nombre", "Lugar", "OTN", "Entrada", "Salida", "Dias"] as const) {
       const beforeValue = String(beforeRow[field]);
       const afterValue = String(afterRow[field]);
 

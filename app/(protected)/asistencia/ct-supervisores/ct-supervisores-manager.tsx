@@ -7,6 +7,7 @@ import type { CtSupervisoresEstado, CtSupervisoresRow } from "@/lib/ct-superviso
 type DraftRow = {
   key: string;
   lugar: string;
+  otn: string;
   entrada: string;
   salida: string;
   dias: "0.25" | "1";
@@ -49,6 +50,20 @@ type ApiResponse = {
   history?: HistoryRow[];
 };
 
+type ManagerSection = "formulario" | "panel";
+type RecordsTab = "registros" | "historial";
+type SortKey =
+  | "Correlativo"
+  | "Estado"
+  | "Nombre"
+  | "Lugar"
+  | "OTN"
+  | "Entrada"
+  | "Salida"
+  | "Dias"
+  | "CreadoEn";
+type SortDirection = "asc" | "desc";
+
 const CT_SUPERVISORES_ESTADOS: CtSupervisoresEstado[] = [
   "Ingresado",
   "Rechazado",
@@ -87,6 +102,7 @@ function createDraftRow(): DraftRow {
   return {
     key: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     lugar: "",
+    otn: "",
     entrada: "",
     salida: "",
     dias: "1",
@@ -118,6 +134,30 @@ function compareCtSupervisoresRows(left: CtSupervisoresRow, right: CtSupervisore
   }
 
   return right.Id - left.Id;
+}
+
+function normalizeSearchValue(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function getSortValue(entry: CtSupervisoresRow, key: SortKey) {
+  switch (key) {
+    case "Dias":
+      return entry.Dias;
+    case "Correlativo":
+    case "Estado":
+    case "Nombre":
+    case "Lugar":
+    case "OTN":
+    case "Entrada":
+    case "Salida":
+    case "CreadoEn":
+      return entry[key];
+  }
 }
 
 async function readJsonOrText(response: Response) {
@@ -192,8 +232,9 @@ export function CtSupervisoresManager({
   initialNextCorrelativo: string;
 }) {
   const [entries, setEntries] = useState(initialRows);
+  const [activeSection, setActiveSection] = useState<ManagerSection>("formulario");
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<"registros" | "historial">("registros");
+  const [activeTab, setActiveTab] = useState<RecordsTab>("registros");
   const [nextCorrelativo, setNextCorrelativo] = useState(initialNextCorrelativo);
   const [form, setForm] = useState<FormState>(() => createEmptyForm(sessionName, initialNextCorrelativo));
   const [historyRows, setHistoryRows] = useState<HistoryRow[]>([]);
@@ -201,6 +242,9 @@ export function CtSupervisoresManager({
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("CreadoEn");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   const isPrivilegedRole =
     sessionRole === "Administrador" || sessionRole === "RRHH" || sessionRole === "Gerencia";
@@ -208,12 +252,46 @@ export function CtSupervisoresManager({
   const selectedEntry = entries.find((entry) => entry.Id === selectedId) ?? null;
   const totalFormDays = form.rows.reduce((total, row) => total + Number(row.dias), 0);
   const estadoTone = getEstadoTone(form.estado);
+  const normalizedSearchTerm = normalizeSearchValue(searchTerm);
+  const filteredEntries = entries
+    .filter((entry) => {
+      if (!normalizedSearchTerm) {
+        return true;
+      }
+
+      return normalizeSearchValue(
+        [
+          entry.Correlativo,
+          entry.Estado,
+          entry.Nombre,
+          entry.Lugar,
+          entry.OTN,
+          entry.CreadoPorNombre,
+          entry.CreadoPorUsuario,
+        ].join(" "),
+      ).includes(normalizedSearchTerm);
+    })
+    .sort((left, right) => {
+      const leftValue = getSortValue(left, sortKey);
+      const rightValue = getSortValue(right, sortKey);
+
+      if (typeof leftValue === "number" && typeof rightValue === "number") {
+        return sortDirection === "asc" ? leftValue - rightValue : rightValue - leftValue;
+      }
+
+      const comparison = String(leftValue).localeCompare(String(rightValue), "es", {
+        numeric: true,
+        sensitivity: "base",
+      });
+
+      return sortDirection === "asc" ? comparison : -comparison;
+    });
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadHistory() {
-      if (activeTab !== "historial" || !selectedId) {
+      if (activeSection !== "panel" || activeTab !== "historial" || !selectedId) {
         setHistoryRows([]);
         setHistoryError(null);
         setHistoryLoading(false);
@@ -255,7 +333,7 @@ export function CtSupervisoresManager({
     return () => {
       cancelled = true;
     };
-  }, [activeTab, selectedId]);
+  }, [activeSection, activeTab, selectedId]);
 
   function formatTotalDays(total: number) {
     const rounded = Math.round(total * 100) / 100;
@@ -265,6 +343,7 @@ export function CtSupervisoresManager({
   }
 
   function resetForm() {
+    setActiveSection("formulario");
     setSelectedId(null);
     setActiveTab("registros");
     setForm(createEmptyForm(sessionName, nextCorrelativo));
@@ -307,6 +386,7 @@ export function CtSupervisoresManager({
       return;
     }
 
+    setActiveSection("formulario");
     setActiveTab("registros");
 
     const rows = entries
@@ -323,6 +403,7 @@ export function CtSupervisoresManager({
           ? rows.map((row) => ({
               key: `row-${row.Id}`,
               lugar: row.Lugar,
+              otn: row.OTN,
               entrada: toInputDateTime(row.Entrada),
               salida: toInputDateTime(row.Salida),
               dias: row.Dias === 0.25 ? "0.25" : "1",
@@ -331,6 +412,7 @@ export function CtSupervisoresManager({
               {
                 key: `row-${entry.Id}`,
                 lugar: entry.Lugar,
+                otn: entry.OTN,
                 entrada: toInputDateTime(entry.Entrada),
                 salida: toInputDateTime(entry.Salida),
                 dias: entry.Dias === 0.25 ? "0.25" : "1",
@@ -341,9 +423,17 @@ export function CtSupervisoresManager({
   }
 
   function openHistory(entry: CtSupervisoresRow) {
+    setActiveSection("panel");
     setSelectedId(entry.Id);
     setActiveTab("historial");
     setError(null);
+  }
+
+  function setRecordsSorting(key: SortKey) {
+    setSortDirection((currentDirection) =>
+      sortKey === key ? (currentDirection === "asc" ? "desc" : "asc") : key === "CreadoEn" ? "desc" : "asc",
+    );
+    setSortKey(key);
   }
 
   function applyAffectedRows(correlativo: string, rows: CtSupervisoresRow[]) {
@@ -413,6 +503,7 @@ export function CtSupervisoresManager({
         setNextCorrelativo(payload.nextCorrelativo);
       }
 
+      setActiveSection("panel");
       setSelectedId(null);
       setActiveTab("registros");
       setForm(createEmptyForm(sessionName, next));
@@ -462,6 +553,7 @@ export function CtSupervisoresManager({
     try {
       const payloadRows = form.rows.map((row) => ({
         lugar: row.lugar.trim(),
+        otn: row.otn.trim(),
         entrada: row.entrada.trim(),
         salida: row.salida.trim(),
         dias: Number(row.dias),
@@ -513,6 +605,7 @@ export function CtSupervisoresManager({
         setNextCorrelativo(data.nextCorrelativo);
       }
 
+      setActiveSection("panel");
       setSelectedId(null);
       setActiveTab("registros");
       setForm(createEmptyForm(sessionName, next));
@@ -529,7 +622,7 @@ export function CtSupervisoresManager({
     }
   }
 
-  const canChangeSelectedState = selectedEntry ? canChangeEntryState(selectedEntry) : true;
+  const canChangeSelectedState = selectedEntry ? canChangeEntryState(selectedEntry) : isPrivilegedRole;
 
   function renderChangeValue(value: string | null) {
     if (!value) {
@@ -544,8 +637,34 @@ export function CtSupervisoresManager({
   }
 
   return (
-    <div className="mt-6 grid gap-6 xl:grid-cols-[1.05fr_1.35fr]">
-      <form onSubmit={handleSubmit} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div className="mt-6 space-y-6">
+      <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm">
+        <button
+          type="button"
+          onClick={() => setActiveSection("formulario")}
+          className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+            activeSection === "formulario"
+              ? "bg-[#b45309] text-white"
+              : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+          }`}
+        >
+          Crear formulario
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSection("panel")}
+          className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+            activeSection === "panel"
+              ? "bg-[#b45309] text-white"
+              : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+          }`}
+        >
+          Registros e historial
+        </button>
+      </div>
+
+      {activeSection === "formulario" ? (
+        <form onSubmit={handleSubmit} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.3em] text-amber-700">
@@ -666,12 +785,21 @@ export function CtSupervisoresManager({
 
             <div className="mt-4 space-y-3">
               {form.rows.map((row, index) => (
-                <div key={row.key} className="grid gap-3 xl:grid-cols-[1.3fr_1.1fr_1.1fr_110px_auto]">
+                <div key={row.key} className="grid gap-3 xl:grid-cols-[1.2fr_180px_1.1fr_1.1fr_110px_auto]">
                   <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
                     Lugar
                     <input
                       value={row.lugar}
                       onChange={(event) => updateRow(row.key, { lugar: event.target.value })}
+                      className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                    />
+                  </label>
+
+                  <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    OTN
+                    <input
+                      value={row.otn}
+                      onChange={(event) => updateRow(row.key, { otn: event.target.value })}
                       className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
                     />
                   </label>
@@ -757,9 +885,9 @@ export function CtSupervisoresManager({
             </button>
           </div>
         </div>
-      </form>
-
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        </form>
+      ) : (
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.3em] text-amber-700">
@@ -809,30 +937,65 @@ export function CtSupervisoresManager({
         </div>
 
         {activeTab === "registros" ? (
-          <div className="mt-6 overflow-x-auto">
+          <div className="mt-6 space-y-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="grid min-w-[240px] flex-1 gap-2 text-sm font-medium text-slate-700">
+                Buscar
+                <input
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Correlativo, nombre, lugar, OTN, estado..."
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                />
+              </label>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                {filteredEntries.length} de {entries.length} registros
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200 text-sm">
               <thead className="bg-slate-50 text-left uppercase tracking-[0.16em] text-slate-500">
                 <tr>
-                  <th className="px-3 py-3">Correlativo</th>
-                  <th className="px-3 py-3">Estado</th>
-                  <th className="px-3 py-3">Nombre</th>
-                  <th className="px-3 py-3">Lugar</th>
-                  <th className="px-3 py-3">Entrada</th>
-                  <th className="px-3 py-3">Salida</th>
-                  <th className="px-3 py-3">Dias</th>
-                  <th className="px-3 py-3">Creado</th>
+                  {[
+                    ["Correlativo", "Correlativo"],
+                    ["Estado", "Estado"],
+                    ["Nombre", "Nombre"],
+                    ["Lugar", "Lugar"],
+                    ["OTN", "OTN"],
+                    ["Entrada", "Entrada"],
+                    ["Salida", "Salida"],
+                    ["Dias", "Dias"],
+                    ["Creado", "CreadoEn"],
+                  ].map(([label, key]) => {
+                    const isActiveSort = sortKey === key;
+                    return (
+                      <th key={key} className="px-3 py-3">
+                        <button
+                          type="button"
+                          onClick={() => setRecordsSorting(key as SortKey)}
+                          className={`inline-flex items-center gap-2 ${isActiveSort ? "text-slate-900" : "text-slate-500"}`}
+                        >
+                          {label}
+                          <span className="text-[10px]">
+                            {isActiveSort ? (sortDirection === "asc" ? "▲" : "▼") : "↕"}
+                          </span>
+                        </button>
+                      </th>
+                    );
+                  })}
                   <th className="px-3 py-3 text-right">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {entries.length === 0 ? (
+                {filteredEntries.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-3 py-8 text-center text-slate-500">
-                      No hay registros aun.
+                    <td colSpan={10} className="px-3 py-8 text-center text-slate-500">
+                      {entries.length === 0 ? "No hay registros aun." : "No hay resultados para la busqueda."}
                     </td>
                   </tr>
                 ) : (
-                  entries.map((entry) => (
+                  filteredEntries.map((entry) => (
                     <tr key={entry.Id} className="align-top">
                       <td className="px-3 py-3 font-medium text-slate-900">{entry.Correlativo}</td>
                       <td className="px-3 py-3">
@@ -846,6 +1009,7 @@ export function CtSupervisoresManager({
                       </td>
                       <td className="px-3 py-3 text-slate-700">{entry.Nombre}</td>
                       <td className="px-3 py-3 text-slate-700">{entry.Lugar}</td>
+                      <td className="px-3 py-3 text-slate-700">{entry.OTN}</td>
                       <td className="px-3 py-3 text-slate-700">{formatDateTimeDdMmYyyy(entry.Entrada)}</td>
                       <td className="px-3 py-3 text-slate-700">{formatDateTimeDdMmYyyy(entry.Salida)}</td>
                       <td className="px-3 py-3 text-slate-700">{entry.Dias}</td>
@@ -875,6 +1039,7 @@ export function CtSupervisoresManager({
                 )}
               </tbody>
             </table>
+          </div>
           </div>
         ) : (
           <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -952,7 +1117,8 @@ export function CtSupervisoresManager({
             )}
           </div>
         )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
